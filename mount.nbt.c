@@ -43,10 +43,12 @@ static struct nbt_node *root_node;
 static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const char *name) {
 	//return nbt_find_by_name(parent, name);
 	switch(parent->type) {
+		int i;
+		char *end_p;
 		struct list_head *pos;
 		case TAG_LIST:
-			// TODO
-			return NULL;
+			i = strtol(name, &end_p, 0);
+			return *end_p ? NULL : nbt_list_item(parent, i);
 		case TAG_COMPOUND:
 			list_for_each(pos, &parent->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
@@ -184,11 +186,25 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
 	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(node->type != TAG_COMPOUND) return -ENOTDIR;
-	struct list_head *pos;
-	list_for_each(pos, &node->payload.tag_compound->entry) {
-		struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
-		if(entry->name) filler(buf, entry->name, NULL, 0);
+	switch(node->type) {
+		unsigned int i;
+		char text_buffer[32];
+		struct list_head *pos;
+		case TAG_LIST:
+			i = 0;
+			list_for_each(pos, &node->payload.tag_compound->entry) {
+				sprintf(text_buffer, "%u", i++);
+				filler(buf, text_buffer, NULL, 0);
+			}
+			break;
+		case TAG_COMPOUND:
+			list_for_each(pos, &node->payload.tag_compound->entry) {
+				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
+				if(entry->name) filler(buf, entry->name, NULL, 0);
+			}
+			break;
+		default:
+			return -ENOTDIR;
 	}
 	return 0;
 }
