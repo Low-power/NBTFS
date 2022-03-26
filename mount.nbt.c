@@ -88,7 +88,7 @@ static size_t get_size(struct nbt_node *node) {
 		case TAG_BYTE_ARRAY:
 			return node->payload.tag_byte_array.length;
 		case TAG_STRING:
-			return strlen(node->payload.tag_string);
+			return strlen(node->payload.tag_string) + 1;
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return nbt_size(node);
@@ -161,10 +161,11 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			break;
 		case TAG_STRING:
 			length = strlen(node->payload.tag_string);
-			if(length <= offset) return 0;
+			if(length < offset) return 0;
 			length -= offset;
 			if(length > sizeof buffer) length = sizeof buffer;
 			memcpy(buffer, node->payload.tag_string + offset, length);
+			if(length < sizeof buffer) buffer[length++] = '\n';
 			offset = 0;
 			break;
 		case TAG_LIST:
