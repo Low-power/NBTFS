@@ -6,7 +6,7 @@
 # it, you can buy us a beer in return.
 # -----------------------------------------------------------------------------
 
-CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch
+CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -std=gnu99
 
 all: nbtreader check
 
@@ -16,8 +16,8 @@ nbtreader: main.o libnbt.a
 check: check.c libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) check.c -L. -lnbt -lz -o $@
 
-regioninfo: regioninfo.c libnbt.a
-	$(CC) $(CFLAGS) $(LDFLAGS) regioninfo.c -L. -lnbt -lz -o $@
+regiondump:	regiondump.c libnbt.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
 
 mount.nbt:	mount.nbt.c libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z -l fuse
@@ -37,4 +37,4 @@ nbt_treeops.o: nbt_treeops.c
 nbt_util.o: nbt_util.c
 
 clean:
-	rm -f nbtreader check regioninfo mount.nbt libnbt.a main.o buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
+	rm -f nbtreader check regiondump mount.nbt libnbt.a main.o buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
