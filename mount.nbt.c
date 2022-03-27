@@ -37,21 +37,68 @@ static uid_t myuid;
 static gid_t mygid;
 static int read_only = 0;
 static mode_t node_umask = 0;
+static int use_type_prefix = 0;
 static FILE *nbt_file;
 static struct nbt_node *root_node;
 
+static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
+	switch(len) {
+		case 4:
+			if(strncmp(name, "byte", 4) == 0) return TAG_BYTE;
+			else if(strncmp(name, "int8", 4) == 0) return TAG_BYTE;
+			else if(strncmp(name, "list", 4) == 0) return TAG_LIST;
+			else break;
+		case 5:
+			if(strncmp(name, "int16", 5) == 0) return TAG_SHORT;
+			else if(strncmp(name, "int32", 5) == 0) return TAG_INT;
+			else if(strncmp(name, "int64", 5) == 0) return TAG_LONG;
+			else if(strncmp(name, "float", 5) == 0) return TAG_FLOAT;
+			else break;
+		case 6:
+			if(strncmp(name, "string", 6) == 0) return TAG_STRING;
+			else if(strncmp(name, "single", 6) == 0) return TAG_FLOAT;
+			else if(strncmp(name, "double", 6) == 0) return TAG_DOUBLE;
+			else break;
+		case 7:
+			if(strncmp(name, "float32", 7) == 0) return TAG_FLOAT;
+			else if(strncmp(name, "float64", 7) == 0) return TAG_DOUBLE;
+			else break;
+		case 8:
+			if(strncmp(name, "compound", 8) == 0) return TAG_COMPOUND;
+			else break;
+		case 9:
+			if(strncmp(name, "bytearray", 9) == 0) return TAG_BYTE_ARRAY;
+			else if(strncmp(name, "int8array", 9) == 0) return TAG_BYTE_ARRAY;
+			else break;
+		case 10:
+			if(strncmp(name, "int32array", 10) == 0) return TAG_INT_ARRAY;
+			else if(strncmp(name, "int64array", 10) == 0) return TAG_LONG_ARRAY;
+			else break;
+	}
+	return TAG_INVALID;
+}
+
 static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const char *name) {
+	nbt_type type = TAG_INVALID;
+	const char *colon = strchr(name, ':');
+	if(colon) {
+		type = get_nbt_type_by_name_prefix(name, colon - name);
+		if(type == TAG_INVALID) return NULL;
+		name = colon + 1;
+	}
 	//return nbt_find_by_name(parent, name);
 	switch(parent->type) {
 		int i;
 		char *end_p;
 		struct list_head *pos;
 		case TAG_LIST:
+			if(type != TAG_INVALID) return NULL;
 			i = strtol(name, &end_p, 0);
 			return *end_p ? NULL : nbt_list_item(parent, i);
 		case TAG_COMPOUND:
 			list_for_each(pos, &parent->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
+				if(type != TAG_INVALID && entry->type != type) continue;
 				if(entry->name && strcmp(entry->name, name) == 0) return entry;
 			}
 	}
@@ -185,6 +232,37 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 	return size;
 }
 
+static const char *get_node_type_name(const struct nbt_node *node) {
+	switch(node->type) {
+		case TAG_BYTE:
+			return "int8";
+		case TAG_SHORT:
+			return "int16";
+		case TAG_INT:
+			return "int32";
+		case TAG_LONG:
+			return "int64";
+		case TAG_FLOAT:
+			return "float32";
+		case TAG_DOUBLE:
+			return "float64";
+		case TAG_STRING:
+			return "string";
+		case TAG_LIST:
+			return "list";
+		case TAG_COMPOUND:
+			return "compound";
+		case TAG_BYTE_ARRAY:
+			return "int8array";
+		case TAG_INT_ARRAY:
+			return "int32array";
+		case TAG_LONG_ARRAY:
+			return "int64array";
+		default:
+			return NULL;
+	}
+}
+
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
 	struct nbt_node *node = (struct nbt_node *)fi->fh;
 	switch(node->type) {
@@ -201,7 +279,22 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 		case TAG_COMPOUND:
 			list_for_each(pos, &node->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
-				if(entry->name) filler(buf, entry->name, NULL, 0);
+				if(!entry->name) continue;
+				if(use_type_prefix) {
+					const char *prefix = get_node_type_name(entry);
+					if(prefix) {
+						size_t prefix_len = strlen(prefix);
+						size_t name_len = strlen(entry->name);
+						char text_buffer[prefix_len + 1 + name_len + 1];
+						memcpy(text_buffer, prefix, prefix_len);
+						text_buffer[prefix_len] = ':';
+						memcpy(text_buffer + prefix_len + 1, entry->name, name_len);
+						text_buffer[prefix_len + 1 + name_len] = 0;
+						filler(buf, text_buffer, NULL, 0);
+						continue;
+					}
+				}
+				filler(buf, entry->name, NULL, 0);
 			}
 			break;
 		default:
@@ -220,6 +313,7 @@ static char *parse_extended_options(char *o) {
 		if(strcmp(o, "ro") == 0) read_only = 1;
 		else if(strcmp(o, "rw") == 0) read_only = 0;
 		else if(strncmp(o, "umask=", 6) == 0) node_umask = strtol(o + 6, NULL, 8) & 0777;
+		else if(strcmp(o, "typeprefix") == 0) use_type_prefix = 1;
 		else {
 			if(fuse_opt_len) {
 				fuse_opt[fuse_opt_len++] = ',';
