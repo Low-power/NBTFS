@@ -94,6 +94,37 @@ static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
 	return TAG_INVALID;
 }
 
+static const char *get_node_type_name(const struct nbt_node *node) {
+	switch(node->type) {
+		case TAG_BYTE:
+			return "int8";
+		case TAG_SHORT:
+			return "int16";
+		case TAG_INT:
+			return "int32";
+		case TAG_LONG:
+			return "int64";
+		case TAG_FLOAT:
+			return "float32";
+		case TAG_DOUBLE:
+			return "float64";
+		case TAG_STRING:
+			return "string";
+		case TAG_LIST:
+			return "list";
+		case TAG_COMPOUND:
+			return "compound";
+		case TAG_BYTE_ARRAY:
+			return "int8array";
+		case TAG_INT_ARRAY:
+			return "int32array";
+		case TAG_LONG_ARRAY:
+			return "int64array";
+		default:
+			return NULL;
+	}
+}
+
 static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const char *name) {
 	if(is_region && !parent) {
 		char *end_p;
@@ -122,6 +153,14 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 			struct list_head *pos;
 		case TAG_LIST:
 			if(type != TAG_INVALID) return NULL;
+			if(strcmp(name, ".type") == 0) {
+				struct nbt_node *type_name_node = malloc(sizeof(struct nbt_node));
+				if(!type_name_node) return NULL;
+				type_name_node->type = 128;
+				type_name_node->payload.tag_string =
+					(char *)get_node_type_name(parent->payload.tag_list->data);
+				return type_name_node;
+			}
 			i = strtol(name, &end_p, 0);
 			return *end_p ? NULL : nbt_list_item(parent, i);
 		case TAG_COMPOUND:
@@ -130,6 +169,7 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 				if(type != TAG_INVALID && entry->type != type) continue;
 				if(entry->name && strcmp(entry->name, name) == 0) return entry;
 			}
+			break;
 	}
 	return NULL;
 }
@@ -161,13 +201,15 @@ static size_t get_size(struct nbt_node *node) {
 			return snprintf(NULL, 0, "%f\n", (double)node->payload.tag_float);
 		case TAG_DOUBLE:
 			return snprintf(NULL, 0, "%f\n", node->payload.tag_double);
-		case TAG_BYTE_ARRAY:
-			return node->payload.tag_byte_array.length;
 		case TAG_STRING:
+		case 128:
+			if(!node->payload.tag_string) return 0;
 			return strlen(node->payload.tag_string) + 1;
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return nbt_size(node);
+		case TAG_BYTE_ARRAY:
+			return node->payload.tag_byte_array.length;
 		case TAG_INT_ARRAY:
 			return node->payload.tag_int_array.length * 4;
 		case TAG_LONG_ARRAY:
@@ -209,6 +251,12 @@ static int nbt_open(const char *path, struct fuse_file_info *fi) {
 	return 0;
 }
 
+static int nbt_release(const char *path, struct fuse_file_info *fi) {
+	struct nbt_node *node = (struct nbt_node *)fi->fh;
+	if(node->type == 128) free(node);
+	return 0;
+}
+
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 	char buffer[4096];
 	size_t length;
@@ -233,15 +281,9 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 		case TAG_DOUBLE:
 			length = sprintf(buffer, "%f\n", node->payload.tag_double);
 			break;
-		case TAG_BYTE_ARRAY:
-			length = node->payload.tag_byte_array.length;
-			if(length <= offset) return 0;
-			length -= offset;
-			if(length > sizeof buffer) length = sizeof buffer;
-			memcpy(buffer, node->payload.tag_byte_array.data + offset, length);
-			offset = 0;
-			break;
 		case TAG_STRING:
+		case 128:
+			if(!node->payload.tag_string) return 0;
 			length = strlen(node->payload.tag_string);
 			if(length < offset) return 0;
 			length -= offset;
@@ -253,6 +295,14 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return -EISDIR;
+		case TAG_BYTE_ARRAY:
+			length = node->payload.tag_byte_array.length;
+			if(length <= offset) return 0;
+			length -= offset;
+			if(length > sizeof buffer) length = sizeof buffer;
+			memcpy(buffer, node->payload.tag_byte_array.data + offset, length);
+			offset = 0;
+			break;
 		case TAG_INT_ARRAY:
 		case TAG_LONG_ARRAY:
 			return -EPERM;
@@ -265,37 +315,6 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 	}
 	memcpy(out_buf, buffer + offset, size);
 	return size;
-}
-
-static const char *get_node_type_name(const struct nbt_node *node) {
-	switch(node->type) {
-		case TAG_BYTE:
-			return "int8";
-		case TAG_SHORT:
-			return "int16";
-		case TAG_INT:
-			return "int32";
-		case TAG_LONG:
-			return "int64";
-		case TAG_FLOAT:
-			return "float32";
-		case TAG_DOUBLE:
-			return "float64";
-		case TAG_STRING:
-			return "string";
-		case TAG_LIST:
-			return "list";
-		case TAG_COMPOUND:
-			return "compound";
-		case TAG_BYTE_ARRAY:
-			return "int8array";
-		case TAG_INT_ARRAY:
-			return "int32array";
-		case TAG_LONG_ARRAY:
-			return "int64array";
-		default:
-			return NULL;
-	}
 }
 
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
@@ -316,6 +335,7 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 			char text_buffer[32];
 			struct list_head *pos;
 		case TAG_LIST:
+			filler(buf, ".type", NULL, 0);
 			i = 0;
 			list_for_each(pos, &node->payload.tag_compound->entry) {
 				sprintf(text_buffer, "%u", i++);
@@ -457,6 +477,7 @@ static struct fuse_operations operations = {
 	.getattr	= nbt_getattr,
 	.open		= nbt_open,
 	.opendir	= nbt_open,
+	.release	= nbt_release,
 	.read		= nbt_read,
 	.readdir	= nbt_readdir,
 };
