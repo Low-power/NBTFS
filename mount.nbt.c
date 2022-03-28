@@ -24,6 +24,8 @@
 #define FUSE_USE_VERSION 26
 #include <fuse/fuse.h>
 #include "nbt.h"
+#include <arpa/inet.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
@@ -38,6 +40,20 @@ static gid_t mygid;
 static int read_only = 0;
 static mode_t node_umask = 0;
 static int use_type_prefix = 0;
+static int is_region = 0;
+
+static int region_fd = -1;
+static size_t region_file_size = 0;
+static void *region_map = NULL;
+static struct chunk_info {
+	uint32_t raw_offset_and_size;
+	uint32_t raw_mtime;
+	void *map_begin;
+	size_t length;
+	struct nbt_node *nbt_node;
+} region_chunks[1024];
+static struct nbt_node region_root_node = { .type = TAG_INVALID };
+
 static FILE *nbt_file;
 static struct nbt_node *root_node;
 
@@ -79,6 +95,19 @@ static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
 }
 
 static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const char *name) {
+	if(is_region && !parent) {
+		char *end_p;
+		unsigned int i = strtoul(name, &end_p, 0);
+		if(*end_p) return NULL;
+		if(i >= 1024) return NULL;
+		struct chunk_info *info = region_chunks + i;
+		if(!info->nbt_node) {
+			if(!info->map_begin) return NULL;
+			info->nbt_node = nbt_parse_compressed(info->map_begin, info->length);
+		}
+		return info->nbt_node;
+	}
+
 	nbt_type type = TAG_INVALID;
 	const char *colon = strchr(name, ':');
 	if(colon) {
@@ -88,9 +117,9 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 	}
 	//return nbt_find_by_name(parent, name);
 	switch(parent->type) {
-		int i;
-		char *end_p;
-		struct list_head *pos;
+			int i;
+			char *end_p;
+			struct list_head *pos;
 		case TAG_LIST:
 			if(type != TAG_INVALID) return NULL;
 			i = strtol(name, &end_p, 0);
@@ -107,7 +136,7 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 
 static struct nbt_node *get_node(struct nbt_node *parent, const char *path) {
 	if(*path == '/') path++;
-	if(!*path) return parent;
+	if(!*path) return is_region && !parent ? &region_root_node : parent;
 	size_t name_len = 1;
 	while(path[name_len] && path[name_len] != '/') name_len++;
 	char name[name_len + 1];
@@ -153,11 +182,16 @@ static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_i
 	memset(stbuf, 0, sizeof *stbuf);
 	stbuf->st_uid = myuid;
 	stbuf->st_gid = mygid;
-	stbuf->st_ino = (ino_t)node;
-	stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
-	stbuf->st_mode &= ~node_umask;
 	stbuf->st_nlink = 1;
-	stbuf->st_size = get_size(node);
+	if(is_region && node == &region_root_node) {
+		stbuf->st_ino = 1;
+		stbuf->st_mode = (0777 | S_IFDIR) & ~node_umask;
+	} else {
+		stbuf->st_ino = (ino_t)node;
+		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
+		stbuf->st_mode &= ~node_umask;
+		stbuf->st_size = get_size(node);
+	}
 	return 0;
 }
 
@@ -179,6 +213,7 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 	char buffer[4096];
 	size_t length;
 	struct nbt_node *node = (struct nbt_node *)fi->fh;
+	if(is_region && node == &region_root_node) return -EISDIR;
 	switch(node->type) {
 		case TAG_BYTE:
 			length = sprintf(buffer, "%hhd\n", (char)node->payload.tag_byte);
@@ -265,10 +300,21 @@ static const char *get_node_type_name(const struct nbt_node *node) {
 
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
 	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	switch(node->type) {
+	if(is_region && node == &region_root_node) {
 		unsigned int i;
-		char text_buffer[32];
-		struct list_head *pos;
+		for(i = 0; i < 1024; i++) {
+			const struct chunk_info *info = region_chunks + i;
+			if(!info->map_begin) continue;
+			char text_buffer[5];
+			sprintf(text_buffer, "%u", i);
+			filler(buf, text_buffer, NULL, 0);
+		}
+		return 0;
+	}
+	switch(node->type) {
+			unsigned int i;
+			char text_buffer[32];
+			struct list_head *pos;
 		case TAG_LIST:
 			i = 0;
 			list_for_each(pos, &node->payload.tag_compound->entry) {
@@ -314,6 +360,7 @@ static char *parse_extended_options(char *o) {
 		else if(strcmp(o, "rw") == 0) read_only = 0;
 		else if(strncmp(o, "umask=", 6) == 0) node_umask = strtol(o + 6, NULL, 8) & 0777;
 		else if(strcmp(o, "typeprefix") == 0) use_type_prefix = 1;
+		else if(strcmp(o, "region") == 0) is_region = 1;
 		else {
 			if(fuse_opt_len) {
 				fuse_opt[fuse_opt_len++] = ',';
@@ -335,6 +382,74 @@ static char *parse_extended_options(char *o) {
 static void print_usage(const char *name) {
 	fprintf(stderr, "Usage: %s [-o <fs-options>] [-fnrvw] <nbt-file> <mount-point>\n",
 		name);
+}
+
+static int read_region_header(int fd) {
+	unsigned int i;
+	off_t len = lseek(fd, 0, SEEK_END);
+	if(len < 0) {
+		perror("lseek");
+		return -1;
+	}
+	if(len < 8192) {
+		fputs("File is too small to be a valid region file\n", stderr);
+		return -1;
+	}
+	region_file_size = len;
+	lseek(fd, 0, SEEK_SET);
+	region_map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+	if(!region_map) {
+		perror("mmap");
+		return -1;
+	}
+	uint8_t *byte_p = region_map;
+	int32_t *int_p = region_map;
+	for(i = 0; i < 1024; i++) {
+		struct chunk_info *info = region_chunks + i;
+		info->raw_offset_and_size = int_p[i];
+		size_t chunk_size = byte_p[i * 4 + 3] * 4 * 1024;
+		if(!chunk_size) continue;
+		off_t chunk_offset = (ntohl(int_p[i]) >> 8) & 0xffffff;
+		if(!chunk_offset) continue;
+		off_t file_offset = chunk_offset * 4 * 1024;
+		if(file_offset > len) {
+			fprintf(stderr, "Chunk %u has invalid offset %ld that's out of file length\n",
+				i, (long int)file_offset);
+			if(read_only) continue;
+			fputs("Cannot continue in read-write mode\n", stderr);
+			return -1;
+		}
+		info->raw_mtime = int_p[1024 + i];
+/*
+		time_t chunk_mtime = ntohl(info->raw_mtime);
+		struct tm *chunk_tm = localtime(&chunk_mtime);
+		char time_buffer[24];
+		if(!strftime(time_buffer, sizeof time_buffer, "%F %T", chunk_tm)) {
+			sprintf(time_buffer, "%d", (int)chunk_mtime);
+		}
+*/
+		uint8_t *chunk = (uint8_t *)region_map + file_offset;
+		int32_t used_space;
+		memcpy(&used_space, chunk, 4);
+		used_space = ntohl(used_space);
+		if(used_space < 0 || (size_t)used_space > chunk_size) {
+			fprintf(stderr, "Chunk %u has invalid size %d\n", i, (int)used_space);
+			if(read_only) continue;
+			fputs("Cannot continue in read-write mode\n", stderr);
+			return -1;
+		}
+		uint8_t compression_type = chunk[4];
+		if(compression_type != 1 && compression_type != 2) {
+			fprintf(stderr, "Chunk %u has unsupported compression type %hhu\n",
+				i, compression_type);
+			if(read_only) continue;
+			fputs("Cannot continue in read-write mode\n", stderr);
+			return -1;
+		}
+		info->map_begin = chunk + 5;
+		info->length = used_space - 1;
+	}
+	return 0;
 }
 
 static struct fuse_operations operations = {
@@ -414,15 +529,24 @@ int main(int argc, char **argv) {
 	}
 	myuid = getuid();
 	mygid = getgid();
-	nbt_file = fopen(argv[optind], read_only ? "rb" : "r+b");
-	if(!nbt_file) {
-		perror(argv[optind]);
-		return 1;
-	}
-	root_node = nbt_parse_file(nbt_file);
-	if(!root_node) {
-		fprintf(stderr, "%s: Failed to mount %s, %s\n", argv[0], argv[optind], nbt_error_to_string(errno));
-		return 1;
+	if(is_region) {
+		region_fd = open(argv[optind], read_only ? O_RDONLY : O_RDWR);
+		if(region_fd == -1) {
+			perror(argv[optind]);
+			return 1;
+		}
+		if(read_region_header(region_fd) < 0) return 1;
+	} else {
+		nbt_file = fopen(argv[optind], read_only ? "rb" : "r+b");
+		if(!nbt_file) {
+			perror(argv[optind]);
+			return 1;
+		}
+		root_node = nbt_parse_file(nbt_file);
+		if(!root_node) {
+			fprintf(stderr, "%s: Failed to mount %s, %s\n", argv[0], argv[optind], nbt_error_to_string(errno));
+			return 1;
+		}
 	}
 	fuse_argc += argc - optind - 1;
 	fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
