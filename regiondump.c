@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
 				compression_type < sizeof compression_type_names / sizeof(char *) ?
 					compression_type : 0
 			]);
-		if(compression_type == 2) {
+		if(compression_type == 1 || compression_type == 2) {
 			chunks_to_dump[i].p = chunk + 5;
 			chunks_to_dump[i].len = used_space - 1;
 		}
