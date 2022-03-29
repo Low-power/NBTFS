@@ -40,4 +40,4 @@ nbt_treeops.o: nbt_treeops.c
 nbt_util.o: nbt_util.c
 
 clean:
-	rm -f nbtreader check regiondump mount.nbt libnbt.a main.o buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
+	rm -f nbtreader check regiondump mount.nbt mkfs.nbt libnbt.a main.o buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
