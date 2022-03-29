@@ -7,6 +7,7 @@
 # -----------------------------------------------------------------------------
 
 CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -std=gnu99
+CFLAGS += -D _FILE_OFFSET_BITS=64
 
 all: nbtreader check
 
@@ -19,8 +20,8 @@ check: check.c libnbt.a
 regiondump:	regiondump.c libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
 
-mount.nbt:	mount.nbt.c libnbt.a
-	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z -l fuse
+mount.nbt:	mount.nbt.c syncwrite.o libnbt.a
+	$(CC) $(CFLAGS) $(LDFLAGS) mount.nbt.c syncwrite.o -o $@ -L . -l nbt -l z -l fuse
 
 mkfs.nbt:	mkfs.nbt.c libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z

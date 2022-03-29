@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "syncrw.h"
 #include <syslog.h>
 #include <string.h>
 #include <stdlib.h>
@@ -43,19 +44,22 @@ static int compression = -1;
 
 static struct wrapped_nbt_node root_node;
 
+static int need_full_write;
 static int region_fd = -1;
 static size_t region_file_size = 0;
 static void *region_map = NULL;
 static struct chunk_info {
 	uint32_t raw_offset_and_size;
 	uint32_t raw_mtime;
+	off_t file_offset;
+	size_t file_size;
 	void *map_begin;
 	size_t length;
 	struct nbt_node *nbt_node;
 	int is_modified;
 } region_chunks[1024];
 
-static FILE *nbt_file;
+static FILE *nbt_file = NULL;
 static int is_modified = 0;
 
 static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
@@ -135,7 +139,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 		struct chunk_info *info = region_chunks + i;
 		if(!info->nbt_node) {
 			if(!info->map_begin) return NULL;
-			info->nbt_node = nbt_parse_compressed(info->map_begin, info->length);
+			info->nbt_node = nbt_parse_compressed((char *)info->map_begin + 1, info->length - 1);
 			if(!info->nbt_node) return NULL;
 		}
 		struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
@@ -894,16 +898,69 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 	return size;
 }
 
+static void handle_file_error(const char *func, int *fd) {
+	syslog(LOG_ERR, "%s on fd %d failed, %s; data will not be saved", func, *fd, strerror(errno));
+	close(*fd);
+	*fd = -1;
+}
+
 static void nbt_destroy(void *a) {
 	if(is_region) {
-		// TODO: Save changes
 		unsigned int i;
+		if(!read_only && region_fd != -1 && need_full_write) {
+			if(lseek(region_fd, 0, SEEK_SET) < 0) {
+				handle_file_error("lseek", &region_fd);
+			} else if(sync_write(region_fd, region_map, 8192) < 0) {
+				handle_file_error("write", &region_fd);
+			}
+		}
 		for(i = 0; i < 1024; i++) {
 			struct chunk_info *info = region_chunks + i;
 			if(!info->map_begin) continue;
+			if(!read_only && region_fd != -1 && (info->is_modified || need_full_write)) {
+				struct buffer buffer;
+				if(lseek(region_fd, info->file_offset, SEEK_SET) < 0) {
+					handle_file_error("lseek", &region_fd);
+				}
+				if(info->is_modified) {
+					syslog(LOG_DEBUG, "Chunk %u has been modified", i);
+					buffer = nbt_dump_compressed(info->nbt_node, compression);
+					if(!buffer.data) {
+						syslog(LOG_ERR, "Failed to compress chunk %u, %s",
+							i, nbt_error_to_string(errno));
+					}
+					if(1 + buffer.len> info->file_size) {
+						// TODO: reallocate more space
+						syslog(LOG_ERR, "Chunk %u is too big to store, need %zu bytes but only %zu bytes available",
+							i, 1 + buffer.len, info->file_size);
+						free(buffer.data);
+						buffer.data = NULL;
+					}
+				} else {
+					buffer.data = NULL;
+				}
+				int32_t len = htonl(buffer.data ? buffer.len + 1 : info->length);
+				if(sync_write(region_fd, &len, 4) < 0) {
+					handle_file_error("write", &region_fd);
+				} else if(buffer.data) {
+					uint8_t v = compression == STRAT_GZIP ? 1 : 2;
+					if(sync_write(region_fd, &v, 1) < 0) {
+						handle_file_error("write", &region_fd);
+					} else if(sync_write(region_fd, buffer.data, buffer.len) < 0) {
+						handle_file_error("write", &region_fd);
+					}
+				} else if(sync_write(region_fd, info->map_begin, info->length) < 0) {
+					handle_file_error("write", &region_fd);
+				}
+				free(buffer.data);
+			}
 			nbt_free(info->nbt_node);
 		}
 		munmap(region_map, region_file_size);
+		if(!read_only && region_fd != -1 && close(region_fd) < 0) {
+			syslog(LOG_ERR, "Failed to close fd %d, %s; data may not be saved",
+				region_fd, strerror(errno));
+		}
 	} else {
 		if(!read_only && nbt_file && (is_modified || write_file_path)) {
 			fseek(nbt_file, 0, SEEK_SET);
@@ -911,7 +968,9 @@ static void nbt_destroy(void *a) {
 			if(status != NBT_OK) {
 				syslog(LOG_ERR, "Failed to save NBT file, %s", nbt_error_to_string(status));
 			}
-			fclose(nbt_file);
+			if(fclose(nbt_file) == EOF) {
+				syslog(LOG_ERR, "Failed to save NBT file, %s", strerror(errno));
+			}
 		}
 		nbt_free(root_node.node);
 	}
@@ -1023,8 +1082,10 @@ static int read_region_header(int fd) {
 			fputs("Cannot continue in read-write mode\n", stderr);
 			return -1;
 		}
-		info->map_begin = chunk + 5;
-		info->length = used_space - 1;
+		info->file_offset = file_offset;
+		info->file_size = chunk_size;
+		info->map_begin = chunk + 4;
+		info->length = used_space;
 	}
 	return 0;
 }
@@ -1122,21 +1183,30 @@ int main(int argc, char **argv) {
 	myuid = getuid();
 	mygid = getgid();
 	if(is_region) {
-		if(!read_only) {
-			fprintf(stderr, "%s: Writable mounting region file is currently not supported\n",
-				argv[0]);
-			return 1;
-		}
-		region_fd = open(argv[optind], read_only ? O_RDONLY : O_RDWR);
-		if(region_fd == -1) {
+		int fd = open(argv[optind], read_only || write_file_path ? O_RDONLY : O_RDWR);
+		if(fd == -1) {
 			perror(argv[optind]);
 			return 1;
 		}
-		if(read_region_header(region_fd) < 0) return 1;
+		if(!read_only) {
+			if(write_file_path) {
+				region_fd = open(write_file_path, O_WRONLY | O_CREAT, 0666);
+				if(region_fd == -1) {
+					perror(write_file_path);
+					return 1;
+				}
+				need_full_write = 1;
+			} else {
+				region_fd = fd;
+				need_full_write = 0;
+			}
+		}
+		if(read_region_header(fd) < 0) return 1;
 		root_node.type = REGION_ROOT_NODE;
 		root_node.node = NULL;
 		root_node.head = NULL;
 		root_node.chunk = NULL;
+		if(fd != region_fd) close(fd);
 		if(compression == -1) compression = STRAT_INFLATE;
 		syslog(LOG_DEBUG, "Region %s loaded successfully", argv[optind]);
 	} else {
