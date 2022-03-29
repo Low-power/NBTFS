@@ -20,7 +20,17 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define NBT_IS_DIRECTORY(NODE) ((NODE)->type == TAG_COMPOUND || (NODE)->type == TAG_LIST)
+#define NBT_IS_DIRECTORY(NODE) ((NODE)->node->type == TAG_COMPOUND || (NODE)->node->type == TAG_LIST)
+#define SET_MODIFIED(NODE) do { if((NODE)->chunk) (NODE)->chunk->is_modified = 1; else is_modified = 1; } while(0)
+
+struct wrapped_nbt_node {
+	enum {
+		NORMAL_NODE, REGION_ROOT_NODE, LIST_TYPE_NODE
+	} type;
+	struct nbt_node *node;
+	struct list_head *head;
+	struct chunk_info *chunk;
+};
 
 static uid_t myuid;
 static gid_t mygid;
@@ -31,6 +41,8 @@ static int is_region = 0;
 static const char *write_file_path = NULL;
 static int compression = -1;
 
+static struct wrapped_nbt_node root_node;
+
 static int region_fd = -1;
 static size_t region_file_size = 0;
 static void *region_map = NULL;
@@ -40,11 +52,10 @@ static struct chunk_info {
 	void *map_begin;
 	size_t length;
 	struct nbt_node *nbt_node;
+	int is_modified;
 } region_chunks[1024];
-static struct nbt_node region_root_node = { .type = TAG_INVALID };
 
 static FILE *nbt_file;
-static struct nbt_node *root_node;
 static int is_modified = 0;
 
 static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
@@ -115,8 +126,8 @@ static const char *get_node_type_name(const struct nbt_node *node) {
 	}
 }
 
-static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const char *name, struct list_head **list_node) {
-	if(is_region && !parent) {
+static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *parent, const char *name) {
+	if(is_region && parent->type == REGION_ROOT_NODE) {
 		char *end_p;
 		unsigned int i = strtoul(name, &end_p, 0);
 		if(*end_p) return NULL;
@@ -125,9 +136,18 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 		if(!info->nbt_node) {
 			if(!info->map_begin) return NULL;
 			info->nbt_node = nbt_parse_compressed(info->map_begin, info->length);
+			if(!info->nbt_node) return NULL;
 		}
-		return info->nbt_node;
+		struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+		if(!r) return NULL;
+		r->type = NORMAL_NODE;
+		r->node = info->nbt_node;
+		r->head = NULL;
+		r->chunk = info;
+		return r;
 	}
+
+	if(parent->type != NORMAL_NODE) return NULL;
 
 	nbt_type type = TAG_INVALID;
 	const char *colon = strchr(name, ':');
@@ -136,8 +156,7 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 		if(type == TAG_INVALID) return NULL;
 		name = colon + 1;
 	}
-	//return nbt_find_by_name(parent, name);
-	switch(parent->type) {
+	switch(parent->node->type) {
 			long int i, j;
 			char *end_p;
 			struct list_head *pos;
@@ -147,38 +166,46 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 				struct nbt_node *type_name_node = malloc(sizeof(struct nbt_node));
 				if(!type_name_node) return NULL;
 				type_name_node->type = 128;
-				type_name_node->payload.tag_list = parent->payload.tag_list;
-/*
-				type_name_node->payload.tag_string =
-					(char *)get_node_type_name(parent->payload.tag_list->data);
-				if(!type_name_node->payload.tag_string) {
-					type_name_node->payload.tag_string = (char *)"invalid";
+				type_name_node->payload.tag_list = parent->node->payload.tag_list;
+				struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+				if(!r) {
+					free(type_name_node);
+					errno = ENOMEM;
+					return NULL;
 				}
-*/
-				if(list_node) *list_node = NULL;
-				return type_name_node;
+				r->type = LIST_TYPE_NODE;
+				r->node = type_name_node;
+				r->head = NULL;
+				r->chunk = parent->chunk;
+				return r;
 			}
 			i = strtol(name, &end_p, 0);
-#if 0
-			return *end_p ? NULL : nbt_list_item(parent, i);
-#else
 			if(*end_p) return NULL;
 			j = 0;
-			list_for_each(pos, &parent->payload.tag_list->entry) {
+			list_for_each(pos, &parent->node->payload.tag_list->entry) {
 				if(j++ == i) {
-					if(list_node) *list_node = pos;
-					return list_entry(pos, struct nbt_list, entry)->data;
+					struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+					if(!r) return NULL;
+					r->type = NORMAL_NODE;
+					r->node = list_entry(pos, struct nbt_list, entry)->data;
+					r->head = pos;
+					r->chunk = parent->chunk;
+					return r;
 				}
 			}
 			break;
-#endif
 		case TAG_COMPOUND:
-			list_for_each(pos, &parent->payload.tag_compound->entry) {
+			list_for_each(pos, &parent->node->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
 				if(type != TAG_INVALID && entry->type != type) continue;
 				if(entry->name && strcmp(entry->name, name) == 0) {
-					if(list_node) *list_node = pos;
-					return entry;
+					struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+					if(!r) return NULL;
+					r->type = NORMAL_NODE;
+					r->node = entry;
+					r->head = pos;
+					r->chunk = parent->chunk;
+					return r;
 				}
 			}
 			break;
@@ -186,17 +213,19 @@ static struct nbt_node *get_child_node_by_name(struct nbt_node *parent, const ch
 	return NULL;
 }
 
-static struct nbt_node *get_node(struct nbt_node *parent, const char *path) {
+static struct wrapped_nbt_node *get_node(struct wrapped_nbt_node *parent, const char *path) {
 	if(*path == '/') path++;
-	if(!*path) return is_region && !parent ? &region_root_node : parent;
+	if(!*path) return parent;
 	size_t name_len = 1;
 	while(path[name_len] && path[name_len] != '/') name_len++;
 	char name[name_len + 1];
 	memcpy(name, path, name_len);
 	name[name_len] = 0;
-	struct nbt_node *node = get_child_node_by_name(parent, name, NULL);
+	struct wrapped_nbt_node *node = get_child_node_by_name(parent, name);
 	if(!node) return NULL;
-	return get_node(node, path + name_len);
+	struct wrapped_nbt_node *r = get_node(node, path + name_len);
+	if(node != r) free(node);
+	return r;
 }
 
 static int init_node(struct nbt_node *node) {
@@ -261,7 +290,8 @@ static int init_node(struct nbt_node *node) {
 	return 0;
 }
 
-static struct nbt_node *create_node(struct nbt_node *parent, const char *path) {
+static struct wrapped_nbt_node *create_node(struct wrapped_nbt_node *parent, const char *path) {
+	struct wrapped_nbt_node *orig_parent_node = parent;
 	if(*path == '/') path++;
 	const char *p = strrchr(path, '/');
 	if(p) {
@@ -269,37 +299,42 @@ static struct nbt_node *create_node(struct nbt_node *parent, const char *path) {
 		char node_path[node_path_len + 1];
 		memcpy(node_path, path, node_path_len);
 		node_path[node_path_len] = 0;
+		errno = ENOENT;
 		parent = get_node(parent, node_path);
-		if(!parent) {
-			errno = ENOENT;
-			return NULL;
-		}
+		if(!parent) return NULL;
 		path = p;
-	} else if(is_region && !parent) {
+	} else if(is_region && parent->type == REGION_ROOT_NODE) {
 		errno = EINVAL;
+		return NULL;
+	}
+	if(parent->type != NORMAL_NODE) {
+		if(parent != orig_parent_node) free(parent);
 		return NULL;
 	}
 	nbt_type type;
 	const char *name;
 	struct list_head *parent_list_head;
-	switch(parent->type) {
+	switch(parent->node->type) {
 			unsigned long int i;
 			char *end_p;
 			struct list_head *pos;
 		case TAG_LIST:
 			i = strtoul(path, &end_p, 0);
 			if(*end_p) {
+				if(parent != orig_parent_node) free(parent);
 				errno = EINVAL;
 				return NULL;
 			}
-			type = parent->payload.tag_list->data->type;
+			type = parent->node->payload.tag_list->data->type;
 			if(type == TAG_INVALID) {
+				if(parent != orig_parent_node) free(parent);
 				errno = EPERM;
 				return NULL;
 			}
 			name = NULL;
-			parent_list_head = &parent->payload.tag_list->entry;
+			parent_list_head = &parent->node->payload.tag_list->entry;
 			if(i != list_length(parent_list_head)) {
+				if(parent != orig_parent_node) free(parent);
 				errno = EPERM;
 				return NULL;
 			}
@@ -307,25 +342,29 @@ static struct nbt_node *create_node(struct nbt_node *parent, const char *path) {
 		case TAG_COMPOUND:
 			p = strchr(path, ':');
 			if(!p) {
+				if(parent != orig_parent_node) free(parent);
 				errno = EINVAL;
 				return NULL;
 			}
 			type = get_nbt_type_by_name_prefix(path, p - path);
 			if(type == TAG_INVALID) {
+				if(parent != orig_parent_node) free(parent);
 				errno = EINVAL;
 				return NULL;
 			}
 			name = p + 1;
-			parent_list_head = &parent->payload.tag_compound->entry;
+			parent_list_head = &parent->node->payload.tag_compound->entry;
 			list_for_each(pos, parent_list_head) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
 				if(entry->name && strcmp(entry->name, name) == 0) {
+					if(parent != orig_parent_node) free(parent);
 					errno = EEXIST;
 					return NULL;
 				}
 			}
 			break;
 		default:
+			if(parent != orig_parent_node) free(parent);
 			errno = ENOTDIR;
 			return NULL;
 	}
@@ -336,6 +375,7 @@ static struct nbt_node *create_node(struct nbt_node *parent, const char *path) {
 		node->name = strdup(name);
 		if(!node->name) {
 			free(node);
+			if(parent != orig_parent_node) free(parent);
 			errno = ENOMEM;
 			return NULL;
 		}
@@ -344,18 +384,32 @@ static struct nbt_node *create_node(struct nbt_node *parent, const char *path) {
 	}
 	if(init_node(node) < 0) {
 		free(node);
+		if(parent != orig_parent_node) free(parent);
 		return NULL;
 	}
+	struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+	if(!r) {
+		nbt_free(node);
+		if(parent != orig_parent_node) free(parent);
+		errno = ENOMEM;
+		return NULL;
+	}
+	r->type = NORMAL_NODE;
+	r->node = node;
+	r->chunk = parent->chunk;
+	if(parent != orig_parent_node) free(parent);
 	struct nbt_list *new_list = malloc(sizeof(struct nbt_list));
 	if(!new_list) {
 		nbt_free(node);
+		free(r);
 		errno = ENOMEM;
 		return NULL;
 	}
 	new_list->data = node;
 	list_add_tail(&new_list->entry, parent_list_head);
-	is_modified = 1;
-	return node;
+	r->head = &new_list->entry;
+	SET_MODIFIED(r);
+	return r;
 }
 
 static size_t get_size(struct nbt_node *node) {
@@ -394,91 +448,94 @@ static size_t get_size(struct nbt_node *node) {
 }
 
 static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
 	memset(stbuf, 0, sizeof *stbuf);
 	stbuf->st_uid = myuid;
 	stbuf->st_gid = mygid;
 	stbuf->st_nlink = 1;
-	if(is_region && node == &region_root_node) {
+	if(is_region && node->type == REGION_ROOT_NODE) {
 		stbuf->st_ino = 1;
 		stbuf->st_mode = (0777 | S_IFDIR) & ~node_umask;
 	} else {
 		stbuf->st_ino = (ino_t)node;
 		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
 		stbuf->st_mode &= ~node_umask;
-		stbuf->st_size = get_size(node);
+		stbuf->st_size = get_size(node->node);
 	}
 	return 0;
 }
 
 static int nbt_getattr(const char *path, struct stat *stbuf) {
-	struct nbt_node *node = get_node(root_node, path);
-	if(!node) return -ENOENT;
+	errno = ENOENT;
+	struct wrapped_nbt_node *node = get_node(&root_node, path);
+	if(!node) return -errno;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
-	return nbt_fgetattr(path, stbuf, &fi);
+	int ne = nbt_fgetattr(path, stbuf, &fi);
+	if(node != &root_node) free(node);
+	return ne;
 }
 
 static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *fi) {
 	if(read_only) return -EROFS;
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(is_region && node == &region_root_node) return -EISDIR;
-	switch(node->type) {
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(is_region && node->type == REGION_ROOT_NODE) return -EISDIR;
+	switch(node->node->type) {
 			void *p;
 		case TAG_BYTE:
 			if(length) return -EINVAL;
-			node->payload.tag_byte = 0;
+			node->node->payload.tag_byte = 0;
 			break;
 		case TAG_SHORT:
 			if(length) return -EINVAL;
-			node->payload.tag_short = 0;
+			node->node->payload.tag_short = 0;
 			break;
 		case TAG_INT:
 			if(length) return -EINVAL;
-			node->payload.tag_int = 0;
+			node->node->payload.tag_int = 0;
 			break;
 		case TAG_LONG:
 			if(length) return -EINVAL;
-			node->payload.tag_long = 0;
+			node->node->payload.tag_long = 0;
 			break;
 		case TAG_FLOAT:
 			if(length) return -EINVAL;
-			node->payload.tag_float = 0;
+			node->node->payload.tag_float = 0;
 			break;
 		case TAG_DOUBLE:
 			if(length) return -EINVAL;
-			node->payload.tag_double = 0;
+			node->node->payload.tag_double = 0;
 			break;
 		case TAG_STRING:
-			p = realloc(node->payload.tag_string, length + 1);
+			p = realloc(node->node->payload.tag_string, length + 1);
 			if(!p) return -ENOMEM;
-			node->payload.tag_string = p;
-			node->payload.tag_string[length] = 0;
+			node->node->payload.tag_string = p;
+			node->node->payload.tag_string[length] = 0;
 			break;
 		case TAG_BYTE_ARRAY:
-			p = realloc(node->payload.tag_byte_array.data, length);
+			p = realloc(node->node->payload.tag_byte_array.data, length);
 			if(length && !p) return -ENOMEM;
-			node->payload.tag_byte_array.data = p;
-			node->payload.tag_byte_array.length = length;
+			node->node->payload.tag_byte_array.data = p;
+			node->node->payload.tag_byte_array.length = length;
 			break;
 		case TAG_INT_ARRAY:
 			if(length % 4) return -EINVAL;
-			p = realloc(node->payload.tag_int_array.data, length);
+			p = realloc(node->node->payload.tag_int_array.data, length);
 			if(length && !p) return -ENOMEM;
-			node->payload.tag_int_array.data = p;
-			node->payload.tag_int_array.length = length / 4;
+			node->node->payload.tag_int_array.data = p;
+			node->node->payload.tag_int_array.length = length / 4;
 			break;
 		case TAG_LONG_ARRAY:
 			if(length % 8) return -EINVAL;
-			p = realloc(node->payload.tag_long_array.data, length);
+			p = realloc(node->node->payload.tag_long_array.data, length);
 			if(length && !p) return -ENOMEM;
-			node->payload.tag_long_array.data = p;
-			node->payload.tag_long_array.length = length / 8;
+			node->node->payload.tag_long_array.data = p;
+			node->node->payload.tag_long_array.length = length / 8;
 			break;
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return -EISDIR;
 		case 128:
-			if(&node->payload.tag_list->entry != node->payload.tag_list->entry.flink) {
+			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
 				return -ENOTEMPTY;
 			}
 			// Silently ignore
@@ -486,28 +543,33 @@ static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *
 		default:
 			return -EIO;
 	}
-	is_modified = 1;
+	SET_MODIFIED(node);
 	return 0;
 }
 
 static int nbt_truncate(const char *path, off_t length) {
 	if(read_only) return -EROFS;
-	struct nbt_node *node = get_node(root_node, path);
+	struct wrapped_nbt_node *node = get_node(&root_node, path);
 	if(!node) return -ENOENT;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
-	return nbt_ftruncate(path, length, &fi);
+	int ne = nbt_ftruncate(path, length, &fi);
+	if(node != &root_node) free(node);
+	return ne;
 }
 
 static int nbt_open(const char *path, struct fuse_file_info *fi) {
 	if((fi->flags & (O_RDONLY|O_WRONLY|O_RDWR)) == O_RDONLY) {
 		if(fi->flags & O_TRUNC) return -EINVAL;
 	} else if(read_only) return -EROFS;
-	struct nbt_node *node = get_node(root_node, path);
+	struct wrapped_nbt_node *node = get_node(&root_node, path);
 	if(!node) return -ENOENT;
 	fi->fh = (uint64_t)node;
 	if(fi->flags & O_TRUNC) {
 		int ne = nbt_ftruncate(path, 0, fi);
-		if(ne) return ne;
+		if(ne) {
+			free(node);
+			return ne;
+		}
 	}
 	return 0;
 }
@@ -515,7 +577,7 @@ static int nbt_open(const char *path, struct fuse_file_info *fi) {
 static int nbt_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 	if(read_only) return -EROFS;
 	errno = ENOENT;
-	struct nbt_node *node = create_node(root_node, path);
+	struct wrapped_nbt_node *node = create_node(&root_node, path);
 	if(!node) return -errno;
 	fi->fh = (uint64_t)node;
 	return 0;
@@ -524,11 +586,15 @@ static int nbt_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
 static int nbt_mkdir(const char *path, mode_t mode) {
 	if(read_only) return -EROFS;
 	errno = ENOENT;
-	return create_node(root_node, path) ? 0 : -errno;
+	struct wrapped_nbt_node *node = create_node(&root_node, path);
+	if(!node) return -errno;
+	free(node);
+	return 0;
 }
 
 static int nbt_remove_node(const char *path, int dir_only) {
-	struct nbt_node *parent_node;
+	int ne;
+	struct wrapped_nbt_node *parent_node;
 	if(*path == '/') path++;
 	const char *p = strrchr(path, '/');
 	if(p) {
@@ -536,39 +602,66 @@ static int nbt_remove_node(const char *path, int dir_only) {
 		char node_path[node_path_len + 1];
 		memcpy(node_path, path, node_path_len);
 		node_path[node_path_len] = 0;
-		parent_node = get_node(root_node, node_path);
+		parent_node = get_node(&root_node, node_path);
 		if(!parent_node) return -ENOENT;
 	} else if(is_region) {
 		// TODO
 		return -EPERM;
 	} else {
-		parent_node = root_node;
+		parent_node = &root_node;
 		p = path;
 	}
-	if(!NBT_IS_DIRECTORY(parent_node)) return -ENOTDIR;
-	if(read_only) return -EROFS;
-	struct list_head *list_node;
-	struct nbt_node *node = get_child_node_by_name(parent_node, p, &list_node);
-	if(!node) return -ENOENT;
-	if(node->type == 128 || !list_node) return -EPERM;
-	if(dir_only) switch(node->type) {
+	if(!NBT_IS_DIRECTORY(parent_node)) {
+		ne = -ENOTDIR;
+		goto cleanup;
+	}
+	if(read_only) {
+		ne = -EROFS;
+		goto cleanup;
+	}
+	errno = ENOENT;
+	struct wrapped_nbt_node *node = get_child_node_by_name(parent_node, p);
+	if(!node) {
+		ne = -errno;
+		goto cleanup;
+	}
+	if(node == &root_node) {
+		ne = -EINVAL;
+		goto cleanup;
+	}
+	if(node->type == LIST_TYPE_NODE || !node->head) {
+		free(node);
+		ne = -EPERM;
+		goto cleanup;
+	}
+	if(dir_only) switch(node->node->type) {
 		case TAG_LIST:
-			if(&node->payload.tag_list->entry != node->payload.tag_list->entry.flink) {
-				return -ENOTEMPTY;
+			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
+				free(node);
+				ne = -ENOTEMPTY;
+				goto cleanup;
 			}
 			break;
 		case TAG_COMPOUND:
-			if(&node->payload.tag_compound->entry != node->payload.tag_compound->entry.flink) {
-				return -ENOTEMPTY;
+			if(&node->node->payload.tag_compound->entry != node->node->payload.tag_compound->entry.flink) {
+				free(node);
+				ne = -ENOTEMPTY;
+				goto cleanup;
 			}
 			break;
 		default:
-			return -ENOTDIR;
+			free(node);
+			ne = -ENOTDIR;
+			goto cleanup;
 	}
-	list_del(list_node);
-	nbt_free(node);
-	is_modified = 1;
-	return 0;
+	list_del(node->head);
+	nbt_free(node->node);
+	SET_MODIFIED(node);
+	free(node);
+	ne = 0;
+cleanup:
+	if(parent_node != &root_node) free(parent_node);
+	return ne;
 }
 
 static int nbt_unlink(const char *path) {
@@ -580,42 +673,42 @@ static int nbt_rmdir(const char *path) {
 }
 
 static int nbt_release(const char *path, struct fuse_file_info *fi) {
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(node->type == 128) free(node);
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(node != &root_node) free(node);
 	return 0;
 }
 
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 	char buffer[4096];
 	size_t length;
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(is_region && node == &region_root_node) return -EISDIR;
-	switch(node->type) {
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(is_region && node->type == REGION_ROOT_NODE) return -EISDIR;
+	switch(node->node->type) {
 			const char *p;
 		case TAG_BYTE:
-			length = sprintf(buffer, "%hhd\n", (char)node->payload.tag_byte);
+			length = sprintf(buffer, "%hhd\n", (char)node->node->payload.tag_byte);
 			break;
 		case TAG_SHORT:
-			length = sprintf(buffer, "%d\n", (int)node->payload.tag_short);
+			length = sprintf(buffer, "%d\n", (int)node->node->payload.tag_short);
 			break;
 		case TAG_INT:
-			length = sprintf(buffer, "%d\n", (int)node->payload.tag_int);
+			length = sprintf(buffer, "%d\n", (int)node->node->payload.tag_int);
 			break;
 		case TAG_LONG:
-			length = sprintf(buffer, "%lld\n", (long long int)node->payload.tag_long);
+			length = sprintf(buffer, "%lld\n", (long long int)node->node->payload.tag_long);
 			break;
 		case TAG_FLOAT:
-			length = sprintf(buffer, "%f\n", (double)node->payload.tag_float);
+			length = sprintf(buffer, "%f\n", (double)node->node->payload.tag_float);
 			break;
 		case TAG_DOUBLE:
-			length = sprintf(buffer, "%f\n", node->payload.tag_double);
+			length = sprintf(buffer, "%f\n", node->node->payload.tag_double);
 			break;
 		case TAG_STRING:
-			p = node->payload.tag_string;
+			p = node->node->payload.tag_string;
 			if(!p) return 0;
 			goto copy_string;
 		case 128:
-			p = get_node_type_name(node->payload.tag_list->data);
+			p = get_node_type_name(node->node->payload.tag_list->data);
 			if(!p) p = "invalid";
 		copy_string:
 			length = strlen(p);
@@ -630,11 +723,11 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 		case TAG_COMPOUND:
 			return -EISDIR;
 		case TAG_BYTE_ARRAY:
-			length = node->payload.tag_byte_array.length;
+			length = node->node->payload.tag_byte_array.length;
 			if(length <= offset) return 0;
 			length -= offset;
 			if(length > sizeof buffer) length = sizeof buffer;
-			memcpy(buffer, node->payload.tag_byte_array.data + offset, length);
+			memcpy(buffer, node->node->payload.tag_byte_array.data + offset, length);
 			offset = 0;
 			break;
 		case TAG_INT_ARRAY:
@@ -652,8 +745,8 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 }
 
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(is_region && node == &region_root_node) {
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(is_region && node->type == REGION_ROOT_NODE) {
 		unsigned int i;
 		for(i = 0; i < 1024; i++) {
 			const struct chunk_info *info = region_chunks + i;
@@ -664,20 +757,20 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 		}
 		return 0;
 	}
-	switch(node->type) {
+	switch(node->node->type) {
 			unsigned int i;
 			char text_buffer[32];
 			struct list_head *pos;
 		case TAG_LIST:
 			filler(buf, ".type", NULL, 0);
 			i = 0;
-			list_for_each(pos, &node->payload.tag_compound->entry) {
+			list_for_each(pos, &node->node->payload.tag_compound->entry) {
 				sprintf(text_buffer, "%u", i++);
 				filler(buf, text_buffer, NULL, 0);
 			}
 			break;
 		case TAG_COMPOUND:
-			list_for_each(pos, &node->payload.tag_compound->entry) {
+			list_for_each(pos, &node->node->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
 				if(!entry->name) continue;
 				if(use_type_prefix) {
@@ -705,9 +798,9 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 
 static int nbt_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 	if(read_only) return -EROFS;
-	struct nbt_node *node = (struct nbt_node *)fi->fh;
-	if(is_region && node == &region_root_node) return -EISDIR;
-	switch(node->type) {
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(is_region && node->type == REGION_ROOT_NODE) return -EISDIR;
+	switch(node->node->type) {
 			static const void *parse_number_labels[] = {
 				[TAG_BYTE] = &&parse_byte,
 				[TAG_SHORT] = &&parse_short,
@@ -718,6 +811,7 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 			};
 			char *end_p;
 			size_t orig_len, copy_len;
+			int need_end_byte;
 		case TAG_BYTE:
 		case TAG_SHORT:
 		case TAG_INT:
@@ -729,49 +823,52 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 				char text_buffer[size + 1];
 				memcpy(text_buffer, buf, size);
 				text_buffer[size] = 0;
-				goto *parse_number_labels[node->type];
+				goto *parse_number_labels[node->node->type];
 		parse_byte:
-				node->payload.tag_byte = strtol(text_buffer, &end_p, 0);
+				node->node->payload.tag_byte = strtol(text_buffer, &end_p, 0);
 				goto parse_number_end;
 		parse_short:
-				node->payload.tag_short = strtol(text_buffer, &end_p, 0);
+				node->node->payload.tag_short = strtol(text_buffer, &end_p, 0);
 				goto parse_number_end;
 		parse_int:
-				node->payload.tag_int = strtol(text_buffer, &end_p, 0);
+				node->node->payload.tag_int = strtol(text_buffer, &end_p, 0);
 				goto parse_number_end;
 		parse_long:
-				node->payload.tag_long = strtoll(text_buffer, &end_p, 0);
+				node->node->payload.tag_long = strtoll(text_buffer, &end_p, 0);
 				goto parse_number_end;
 		parse_float:
-				node->payload.tag_float = strtof(text_buffer, &end_p);
+				node->node->payload.tag_float = strtof(text_buffer, &end_p);
 				goto parse_number_end;
 		parse_double:
-				node->payload.tag_double = strtod(text_buffer, &end_p);
+				node->node->payload.tag_double = strtod(text_buffer, &end_p);
 		parse_number_end:
 				if(*end_p && !isspace(*end_p)) return -EINVAL;
-				is_modified = 1;
+				SET_MODIFIED(node);
 				return *end_p ? end_p - text_buffer + 1 : (int)size;
 			}
 		case TAG_STRING:
-			orig_len = strlen(node->payload.tag_string) + 1;
+			orig_len = strlen(node->node->payload.tag_string) + 1;
 			copy_len = buf[size - 1] == '\n' ? size - 1 : size;
+			need_end_byte = 1;
 			goto copy_bytes;
 		case TAG_BYTE_ARRAY:
-			orig_len = node->payload.tag_byte_array.length;
+			orig_len = node->node->payload.tag_byte_array.length;
 			copy_len = size;
+			need_end_byte = 0;
 		copy_bytes:
 			{
-				void **target_p = node->type == TAG_STRING ?
-					(void **)&node->payload.tag_string : (void **)&node->payload.tag_byte_array.data;
+				void **target_p = node->node->type == TAG_STRING ?
+					(void **)&node->node->payload.tag_string : (void **)&node->node->payload.tag_byte_array.data;
 				if(offset + copy_len > orig_len) {
-					void *p = realloc(*target_p, offset + copy_len);
+					void *p = realloc(*target_p, offset + copy_len + need_end_byte);
 					if(!p) return -ENOMEM;
 					*target_p = p;
-					if(node->type == TAG_BYTE_ARRAY) {
-						node->payload.tag_byte_array.length = offset + copy_len;
+					if(node->node->type == TAG_BYTE_ARRAY) {
+						node->node->payload.tag_byte_array.length = offset + copy_len;
 					}
 				}
 				memcpy((char *)*target_p + offset, buf, copy_len);
+				if(need_end_byte) ((char *)*target_p)[offset + copy_len] = 0;
 			}
 			break;
 		case TAG_LIST:
@@ -782,18 +879,18 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 			return -EPERM;
 		case 128:
 			if(offset) return -EINVAL;
-			if(&node->payload.tag_list->entry != node->payload.tag_list->entry.flink) {
+			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
 				return -ENOTEMPTY;
 			}
 			copy_len = buf[size - 1] == '\n' ? size - 1 : size;
 			nbt_type type = get_nbt_type_by_name_prefix(buf, copy_len);
 			if(type == TAG_INVALID) return -EINVAL;
-			node->payload.tag_list->data->type = type;
+			node->node->payload.tag_list->data->type = type;
 			break;
 		default:
 			return -EIO;
 	}
-	is_modified = 1;
+	SET_MODIFIED(node);
 	return size;
 }
 
@@ -810,13 +907,13 @@ static void nbt_destroy(void *a) {
 	} else {
 		if(!read_only && nbt_file && (is_modified || write_file_path)) {
 			fseek(nbt_file, 0, SEEK_SET);
-			nbt_status status = nbt_dump_file(root_node, nbt_file, compression);
+			nbt_status status = nbt_dump_file(root_node.node, nbt_file, compression);
 			if(status != NBT_OK) {
 				syslog(LOG_ERR, "Failed to save NBT file, %s", nbt_error_to_string(status));
 			}
 			fclose(nbt_file);
 		}
-		nbt_free(root_node);
+		nbt_free(root_node.node);
 	}
 }
 
@@ -1036,6 +1133,10 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 		if(read_region_header(region_fd) < 0) return 1;
+		root_node.type = REGION_ROOT_NODE;
+		root_node.node = NULL;
+		root_node.head = NULL;
+		root_node.chunk = NULL;
 		if(compression == -1) compression = STRAT_INFLATE;
 		syslog(LOG_DEBUG, "Region %s loaded successfully", argv[optind]);
 	} else {
@@ -1055,11 +1156,14 @@ int main(int argc, char **argv) {
 				nbt_file = f;
 			}
 		}
-		root_node = nbt_parse_file(f);
-		if(!root_node) {
+		root_node.type = NORMAL_NODE;
+		root_node.node = nbt_parse_file(f);
+		if(!root_node.node) {
 			fprintf(stderr, "%s: Failed to mount %s, %s\n", argv[0], argv[optind], nbt_error_to_string(errno));
 			return 1;
 		}
+		root_node.head = NULL;
+		root_node.chunk = NULL;
 		if(f != nbt_file) fclose(f);
 		if(compression == -1) compression = STRAT_GZIP;
 		syslog(LOG_DEBUG, "NBT %s loaded successfully", argv[optind]);
