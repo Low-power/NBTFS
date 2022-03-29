@@ -22,6 +22,9 @@ regiondump:	regiondump.c libnbt.a
 mount.nbt:	mount.nbt.c libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z -l fuse
 
+mkfs.nbt:	mkfs.nbt.c libnbt.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
+
 test: check
 	cd testdata && for f in *.nbt; do valgrind ../check "$$f" || exit; done
 
