@@ -4,7 +4,8 @@
 tags
 check
 nbtreader
-regioninfo
+regiondump
+mount.nbt
 testdata/dump.bin
 testdata/dump2.bin
 build/
