@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <syslog.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -459,6 +460,20 @@ static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *
 			node->payload.tag_byte_array.data = p;
 			node->payload.tag_byte_array.length = length;
 			break;
+		case TAG_INT_ARRAY:
+			if(length % 4) return -EINVAL;
+			p = realloc(node->payload.tag_int_array.data, length);
+			if(length && !p) return -ENOMEM;
+			node->payload.tag_int_array.data = p;
+			node->payload.tag_int_array.length = length / 4;
+			break;
+		case TAG_LONG_ARRAY:
+			if(length % 8) return -EINVAL;
+			p = realloc(node->payload.tag_long_array.data, length);
+			if(length && !p) return -ENOMEM;
+			node->payload.tag_long_array.data = p;
+			node->payload.tag_long_array.length = length / 8;
+			break;
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return -EISDIR;
@@ -469,7 +484,7 @@ static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *
 			// Silently ignore
 			break;
 		default:
-			return -EPERM;
+			return -EIO;
 	}
 	is_modified = 1;
 	return 0;
@@ -797,9 +812,7 @@ static void nbt_destroy(void *a) {
 			fseek(nbt_file, 0, SEEK_SET);
 			nbt_status status = nbt_dump_file(root_node, nbt_file, compression);
 			if(status != NBT_OK) {
-				// TODO: Log error
-				//nbt_error_to_string(status);
-				//fprintf(stderr, "Failed to save NBT file, %s\n", nbt_error_to_string(status));
+				syslog(LOG_ERR, "Failed to save NBT file, %s", nbt_error_to_string(status));
 			}
 			fclose(nbt_file);
 		}
@@ -946,6 +959,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	char *fuse_extended_options;
+	int foreground = 0;
 	int verbose = 0;
 	while(1) {
 		int c = getopt(argc, argv, "fo:nrvwF:t:h");
@@ -959,6 +973,7 @@ int main(int argc, char **argv) {
 					return 1;
 				}
 				fuse_argv[fuse_argc - 1] = "-f";
+				foreground = 1;
 				break;
 			case 'o':
 				fuse_extended_options = parse_extended_options(optarg);
@@ -1004,6 +1019,9 @@ int main(int argc, char **argv) {
 		print_usage(argv[0]);
 		return -1;
 	}
+	int logopt = LOG_PID;
+	if(foreground || verbose) logopt |= LOG_PERROR;
+	openlog("mount.nbt", logopt, LOG_DAEMON);
 	myuid = getuid();
 	mygid = getgid();
 	if(is_region) {
@@ -1019,6 +1037,7 @@ int main(int argc, char **argv) {
 		}
 		if(read_region_header(region_fd) < 0) return 1;
 		if(compression == -1) compression = STRAT_INFLATE;
+		syslog(LOG_DEBUG, "Region %s loaded successfully", argv[optind]);
 	} else {
 		FILE *f = fopen(argv[optind], read_only || write_file_path ? "rb" : "r+b");
 		if(!f) {
@@ -1043,6 +1062,7 @@ int main(int argc, char **argv) {
 		}
 		if(f != nbt_file) fclose(f);
 		if(compression == -1) compression = STRAT_GZIP;
+		syslog(LOG_DEBUG, "NBT %s loaded successfully", argv[optind]);
 	}
 	fuse_argc += argc - optind - 1;
 	fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
