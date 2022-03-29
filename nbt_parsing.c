@@ -716,8 +716,6 @@ static nbt_status dump_list_binary(const struct nbt_list* list, struct buffer* b
     if(len > 2147483647 /* INT_MAX */)
         return NBT_ERR;
 
-    assert(type != TAG_INVALID);
-
     if(type == TAG_INVALID)
         return NBT_ERR;
 
@@ -828,13 +826,12 @@ static nbt_status __dump_binary(const nbt_node* tree, bool dump_type, struct buf
 
 struct buffer nbt_dump_binary(const nbt_node* tree)
 {
-    errno = NBT_OK;
-
-    if(tree == NULL) return BUFFER_INIT;
-
     struct buffer ret = BUFFER_INIT;
-
-    errno = __dump_binary(tree, true, &ret);
-
+	if(tree == NULL) return ret;
+	nbt_status status = __dump_binary(tree, true, &ret);
+	if(status != NBT_OK) {
+		buffer_free(&ret);
+		errno = status;
+	}
     return ret;
 }
