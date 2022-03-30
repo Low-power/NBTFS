@@ -856,7 +856,9 @@ static int nbt_rmdir(const char *path) {
 
 static int nbt_release(const char *path, struct fuse_file_info *fi) {
 	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
-	if(node != &root_node) free(node);
+	if(node == &root_node) return 0;
+	if(node->type == LIST_TYPE_NODE) free(node->node);
+	free(node);
 	return 0;
 }
 
