@@ -6,7 +6,7 @@
 # it, you can buy us a beer in return.
 # -----------------------------------------------------------------------------
 
-CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -std=gnu99
+CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -std=gnu99
 CFLAGS += -D _FILE_OFFSET_BITS=64
 
 all: nbtreader check
