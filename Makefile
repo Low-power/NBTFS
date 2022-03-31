@@ -6,39 +6,30 @@
 # it, you can buy us a beer in return.
 # -----------------------------------------------------------------------------
 
+AR ?= ar
 CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -std=gnu99
 CFLAGS += -D _FILE_OFFSET_BITS=64
 
-all: nbtreader check
+LIBNBT_OBJECTS := buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
-nbtreader: main.o libnbt.a
-	$(CC) $(LDFLAGS) main.o -L. -lnbt -lz -o $@
-
-check: check.c libnbt.a
-	$(CC) $(CFLAGS) $(LDFLAGS) check.c -L. -lnbt -lz -o $@
-
-regiondump:	regiondump.c libnbt.a
-	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
+all:	nbtdump check regiondump mkfs.nbt mount.nbt
 
 mount.nbt:	mount.nbt.c syncwrite.o libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) mount.nbt.c syncwrite.o -o $@ -L . -l nbt -l z -l fuse
 
-mkfs.nbt:	mkfs.nbt.c libnbt.a
+# For GNU Make
+%:	%.c libnbt.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
+
+# For BSD make
+.c:	libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z
 
 test: check
 	cd testdata && for f in *.nbt; do valgrind ../check "$$f" || exit; done
 
-main.o: main.c
-
-libnbt.a: buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
-	ar -rcs $@ buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
-
-buffer.o: buffer.c
-nbt_loading.o: nbt_loading.c
-nbt_parsing.o: nbt_parsing.c
-nbt_treeops.o: nbt_treeops.c
-nbt_util.o: nbt_util.c
+libnbt.a:	$(LIBNBT_OBJECTS)
+	$(AR) -rcs $@ buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
 clean:
-	rm -f nbtreader check regiondump mount.nbt mkfs.nbt libnbt.a main.o buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
+	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a $(LIBNBT_OBJECTS)

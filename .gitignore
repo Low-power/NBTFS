@@ -3,7 +3,7 @@
 *.plist
 tags
 check
-nbtreader
+nbtdump
 regiondump
 mount.nbt
 mkfs.nbt
