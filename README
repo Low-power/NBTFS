@@ -1,14 +1,48 @@
-cNBT is an NBT File (see NBT.txt) parser that doesn't
-depend on the horrible slowdown that is the JRE and sticks to the C principle of
-being as simple (and, consequently, as fast) as possible.
+This source tree contains utilities for maintaining NBT files and Minecraft
+Region files. The primary part is a FUSE-based file system implementation
+which allowing NBT file or Minecraft Region file be mounted as a file system,
+and then modified using normal file operations.
 
-Currently implemented features:
+INSTALL
+=======
+To build it from source, make sure you have GCC or a compatible C compiler,
+GNU Make or BSD make, FUSE development library, as well as zlib development
+library installed, then type 'make'; some environment variables are useful to
+configure the build:
+	CC		C compiler
+	AR		archive tool for creating static library
+	CFLAGS		prepend flags to C compiler
+	LDFLAGS		prepend flags to linker (e.g. -L <path>)
+Example:
+	$ CC=gcc CFLAGS=-Os make
 
- * Complete parsing of NBT files
- * Basic tree-manipulation
- * Pretty printing with indentation
- * Writing modified NBT structures back to a compressed file
- * Full error reporting and graceful recovery from corrupt files and trees
+MONUT THE FILE SYSTEM
+=====================
+Use program mount.nbt(8) to mount the file system from a NBT file or a Region
+file. The synopsis of the command line is:
+	mount.nbt [-o <fs-options>] [<other-options>] <mount-from-file> <mount-point>
+The <fs-options> accepts both FUSE-specific and NBTFS-specific mount options,
+some useful ones are:
+	ro		Mount the file system read-only, useful to mount from
+			a file that can't be written to, or to prevent
+			accidentally changing it; but see 'writefile' option
+			later
+	rw		Revert any early 'ro' option
+	region		Specify the mount from file is a Minecraft Region
+			file instead of a standalone NBT file
+	typeprefix	Use node type prefix for node names when listing
+			compound nodes as a directory
+	umask=<mask>	Set file mode mask using an octal number for NBT
+			nodes, default 0
+	writefile=<path>	Set an alternative path for writing NBT data;
+				the original mount from file won't be written
+				to if this is specified; has no effect when
+				file system is mounted read-only
+	compression={gzip|zlib}	Set compression format for writing NBT data;
+				default 'gzip' for NBT file, 'zlib' for
+				Region file; has no effect when file system
+				is mounted read-only
+Note the writing happens only when the file system is unmounted; if anything
+went wrong during this process, the error message will be sent to syslog(3),
+and unfortunately the data is most likely be lost as a result.
 
-This project depends on libz for gzip decompressing and compressing, and a compiler
-with C99 support.
