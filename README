@@ -45,4 +45,29 @@ some useful ones are:
 Note the writing happens only when the file system is unmounted; if anything
 went wrong during this process, the error message will be sent to syslog(3),
 and unfortunately the data is most likely be lost as a result.
-
+Example:
+	# mount.nbt -o ro,region,umask=0022 /usr/home/minecraft/aether-realm/world/AETHER/region/r.1.1.mca /mnt/region/
+	# ls -al /mnt/region/80/Level/
+	total 0
+	-rw-r--r--  1 root  wheel   256 Jan  1  1970 Biomes
+	drwxr-xr-x  1 root  wheel     1 Jan  1  1970 Entities
+	drwxr-xr-x  1 root  wheel  1024 Jan  1  1970 HeightMap
+	-rw-r--r--  1 root  wheel     7 Jan  1  1970 InhabitedTime
+	-rw-r--r--  1 root  wheel    10 Jan  1  1970 LastUpdate
+	-rw-r--r--  1 root  wheel     2 Jan  1  1970 LightPopulated
+	drwxr-xr-x  1 root  wheel    25 Jan  1  1970 Sections
+	-rw-r--r--  1 root  wheel     2 Jan  1  1970 TerrainPopulated
+	drwxr-xr-x  1 root  wheel     1 Jan  1  1970 TileEntities
+	-rw-r--r--  1 root  wheel     2 Jan  1  1970 V
+	-rw-r--r--  1 root  wheel     3 Jan  1  1970 xPos
+	-rw-r--r--  1 root  wheel     3 Jan  1  1970 zPos
+	# ls -al /mnt/region/80/Level/Sections/
+	total 0
+	-rw-r--r--  1 root  wheel  9 Jan  1  1970 .type
+	drwxr-xr-x  1 root  wheel  6 Jan  1  1970 0
+	drwxr-xr-x  1 root  wheel  6 Jan  1  1970 1
+	drwxr-xr-x  1 root  wheel  6 Jan  1  1970 2
+	drwxr-xr-x  1 root  wheel  6 Jan  1  1970 3
+	# cat /mnt/region/80/Level/?Pos
+	48
+	34
