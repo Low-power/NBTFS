@@ -55,20 +55,26 @@ void nbt_free(nbt_node* tree)
 {
     if(tree == NULL) return;
 
-    if(tree->type == TAG_LIST)
-        nbt_free_list(tree->payload.tag_list);
-
-    else if (tree->type == TAG_COMPOUND)
-        nbt_free_list(tree->payload.tag_compound);
-
-    else if(tree->type == TAG_BYTE_ARRAY)
-        free(tree->payload.tag_byte_array.data);
-
-    else if(tree->type == TAG_INT_ARRAY)
-        free(tree->payload.tag_int_array.data);
-
-    else if(tree->type == TAG_STRING)
-        free(tree->payload.tag_string);
+	switch(tree->type) {
+		case TAG_LIST:
+			nbt_free_list(tree->payload.tag_list);
+			break;
+		case TAG_COMPOUND:
+			nbt_free_list(tree->payload.tag_compound);
+			break;
+		case TAG_BYTE_ARRAY:
+			free(tree->payload.tag_byte_array.data);
+			break;
+		case TAG_INT_ARRAY:
+			free(tree->payload.tag_int_array.data);
+			break;
+		case TAG_LONG_ARRAY:
+			free(tree->payload.tag_long_array.data);
+			break;
+		case TAG_STRING:
+			free(tree->payload.tag_string);
+			break;
+	}
 
     free(tree->name);
     free(tree);
