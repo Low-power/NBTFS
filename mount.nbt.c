@@ -290,6 +290,7 @@ static int init_node(struct nbt_node *node) {
 			node->payload.tag_compound->data = malloc(sizeof(struct nbt_node));
 			if(!node->payload.tag_compound->data) {
 				free(node->payload.tag_compound);
+				errno = ENOMEM;
 				return -1;
 			}
 			memset(node->payload.tag_compound->data, 0, sizeof(struct nbt_node));
@@ -512,36 +513,50 @@ static struct wrapped_nbt_node *file_info_to_nbt_node(const struct fuse_file_inf
 	return node;
 }
 
-static size_t get_size(struct nbt_node *node) {
+static size_t get_size(struct wrapped_nbt_node *node) {
 	switch(node->type) {
 			const char *s;
-		case TAG_BYTE:
-			return snprintf(NULL, 0, "%hhd\n", (char)node->payload.tag_byte);
-		case TAG_SHORT:
-			return snprintf(NULL, 0, "%d\n", (int)node->payload.tag_short);
-		case TAG_INT:
-			return snprintf(NULL, 0, "%d\n", (int)node->payload.tag_int);
-		case TAG_LONG:
-			return snprintf(NULL, 0, "%lld\n", (long long int)node->payload.tag_long);
-		case TAG_FLOAT:
-			return snprintf(NULL, 0, "%f\n", (double)node->payload.tag_float);
-		case TAG_DOUBLE:
-			return snprintf(NULL, 0, "%f\n", node->payload.tag_double);
-		case TAG_STRING:
-			if(!node->payload.tag_string) return 0;
-			return strlen(node->payload.tag_string) + 1;
-		case 128:
-			s = get_node_type_name(node->payload.tag_list->data);
+		case NORMAL_NODE:
+			break;
+		case LIST_TYPE_NODE:
+			s = get_node_type_name(node->node->payload.tag_list->data);
 			return s ? strlen(s) + 1 : 8;
+		case ARRAY_ELEMENT_NODE:
+			switch(node->node->type) {
+				case TAG_INT_ARRAY:
+					return snprintf(NULL, 0, "%d\n", (int)node->node->payload.tag_int_array.data[node->pos.index]);
+				case TAG_LONG_ARRAY:
+					return snprintf(NULL, 0, "%lld\n", (long long int)node->node->payload.tag_long_array.data[node->pos.index]);
+			}
+			// Fallthrough
+		default:
+			return 0;
+	}
+	switch(node->node->type) {
+		case TAG_BYTE:
+			return snprintf(NULL, 0, "%hhd\n", (char)node->node->payload.tag_byte);
+		case TAG_SHORT:
+			return snprintf(NULL, 0, "%d\n", (int)node->node->payload.tag_short);
+		case TAG_INT:
+			return snprintf(NULL, 0, "%d\n", (int)node->node->payload.tag_int);
+		case TAG_LONG:
+			return snprintf(NULL, 0, "%lld\n", (long long int)node->node->payload.tag_long);
+		case TAG_FLOAT:
+			return snprintf(NULL, 0, "%f\n", (double)node->node->payload.tag_float);
+		case TAG_DOUBLE:
+			return snprintf(NULL, 0, "%f\n", node->node->payload.tag_double);
+		case TAG_STRING:
+			if(!node->node->payload.tag_string) return 0;
+			return strlen(node->node->payload.tag_string) + 1;
 		case TAG_LIST:
 		case TAG_COMPOUND:
-			return nbt_size(node);
+			return nbt_size(node->node);
 		case TAG_BYTE_ARRAY:
-			return node->payload.tag_byte_array.length;
+			return node->node->payload.tag_byte_array.length;
 		case TAG_INT_ARRAY:
-			return node->payload.tag_int_array.length * 4;
+			return node->node->payload.tag_int_array.length * 4;
 		case TAG_LONG_ARRAY:
-			return node->payload.tag_long_array.length * 8;
+			return node->node->payload.tag_long_array.length * 8;
 		default:
 			return 0;
 	}
@@ -560,7 +575,7 @@ static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_i
 		stbuf->st_ino = (ino_t)node;
 		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
 		stbuf->st_mode &= ~node_umask;
-		stbuf->st_size = get_size(node->node);
+		stbuf->st_size = get_size(node);
 	}
 	return 0;
 }
