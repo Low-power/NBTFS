@@ -1385,70 +1385,107 @@ static struct fuse_operations operations = {
 };
 
 int main(int argc, char **argv) {
-	int fuse_argc = 1;
+	int fuse_argc = 2;
 	char **fuse_argv = malloc(2 * sizeof(char *));
 	if(!fuse_argv) {
 		perror("malloc");
 		return 1;
 	}
-	char *fuse_extended_options;
 	int foreground = 0;
 	int verbose = 0;
-	while(1) {
-		int c = getopt(argc, argv, "fo:nrvwF:t:h");
-		if(c == -1) break;
-		switch(c) {
-			case 'f':
-				fuse_argc++;
-				fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
-				if(!fuse_argv) {
-					perror("realloc");
-					return 1;
-				}
-				fuse_argv[fuse_argc - 1] = "-f";
-				foreground = 1;
-				break;
-			case 'o':
-				fuse_extended_options = parse_extended_options(optarg);
-				if(fuse_extended_options) {
-					fuse_argc += 2;
+	char *mount_from = NULL;
+	char *mount_point = NULL;
+	int i = 1;
+	int end_of_options = 0;
+	while(i < argc) {
+		if(!end_of_options && argv[i][0] == '-') {
+			const char *o = argv[i] + 1;
+			switch(*o) {
+				case 0:
+					goto not_an_option;
+				case '-':
+					if(*++o) {
+						fprintf(stderr, "%s: Invalid option '%s'\n",
+							argv[0], argv[i]);
+						return -1;
+					}
+					end_of_options = 1;
+					break;
+			}
+			while(*o) switch(*o++) {
+				char *fuse_extended_options;
+				case 'f':
+					fuse_argc++;
 					fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
 					if(!fuse_argv) {
 						perror("realloc");
 						return 1;
 					}
-					fuse_argv[fuse_argc - 2] = "-o";
-					fuse_argv[fuse_argc - 1] = fuse_extended_options;
-				}
-				break;
-			case 'n':
-				break;
-			case 'r':
-				read_only = 1;
-				break;
-			case 'v':
-				verbose++;
-				break;
-			case 'w':
-				read_only = 0;
-				break;
-			case 'F':
-			case 't':
-				if(strcmp(optarg, "nbt")) {
-					fprintf(stderr, "%s: The file system type may only be specified as 'nbt'\n",
-						argv[0]);
+					fuse_argv[fuse_argc - 2] = "-f";
+					foreground = 1;
+					break;
+				case 'o':
+					if(++i >= argc) {
+						fprintf(stderr, "%s: Option '-o' requires an argument\n",
+							argv[0]);
+						return -1;
+					}
+					fuse_extended_options = parse_extended_options(argv[i]);
+					if(fuse_extended_options) {
+						fuse_argc += 2;
+						fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
+						if(!fuse_argv) {
+							perror("realloc");
+							return 1;
+						}
+						fuse_argv[fuse_argc - 3] = "-o";
+						fuse_argv[fuse_argc - 2] = fuse_extended_options;
+					}
+					break;
+				case 'n':
+					break;
+				case 'r':
+					read_only = 1;
+					break;
+				case 'v':
+					verbose++;
+					break;
+				case 'w':
+					read_only = 0;
+					break;
+				case 'F':
+				case 't':
+					if(++i >= argc) {
+						fprintf(stderr, "%s: Option '-%c' requires an argument\n",
+							argv[0], o[-1]);
+						return -1;
+					}
+					if(strcmp(argv[i], "nbt")) {
+						fprintf(stderr, "%s: The file system type may only be specified as 'nbt'\n",
+							argv[0]);
+						return -1;
+					}
+					break;
+				case 'h':
+					print_usage(argv[0]);
+					return 0;
+				default:
+					fprintf(stderr, "%s: Invalid option '-%c'\n", argv[0], o[-1]);
+					print_usage(argv[0]);
 					return -1;
-				}
-				break;
-			case 'h':
-				print_usage(argv[0]);
-				return 0;
-			case '?':
+			}
+		} else {
+not_an_option:
+			if(!mount_from) mount_from = argv[i];
+			else if(!mount_point) mount_point = argv[i];
+			else {
 				print_usage(argv[0]);
 				return -1;
+			}
 		}
+		i++;
 	}
-	if(argc - optind != 2) {
+	if(!mount_from || !mount_point) {
 		print_usage(argv[0]);
 		return -1;
 	}
@@ -1458,9 +1495,9 @@ int main(int argc, char **argv) {
 	myuid = getuid();
 	mygid = getgid();
 	if(is_region) {
-		int fd = open(argv[optind], read_only || write_file_path ? O_RDONLY : O_RDWR);
+		int fd = open(mount_from, read_only || write_file_path ? O_RDONLY : O_RDWR);
 		if(fd == -1) {
-			perror(argv[optind]);
+			perror(mount_from);
 			return 1;
 		}
 		if(!read_only) {
@@ -1483,11 +1520,11 @@ int main(int argc, char **argv) {
 		root_node.chunk = NULL;
 		if(fd != region_fd) close(fd);
 		if(compression == -1) compression = STRAT_INFLATE;
-		syslog(LOG_DEBUG, "Region %s loaded successfully", argv[optind]);
+		syslog(LOG_DEBUG, "Region %s loaded successfully", mount_from);
 	} else {
-		FILE *f = fopen(argv[optind], read_only || write_file_path ? "rb" : "r+b");
+		FILE *f = fopen(mount_from, read_only || write_file_path ? "rb" : "r+b");
 		if(!f) {
-			perror(argv[optind]);
+			perror(mount_from);
 			return 1;
 		}
 		if(!read_only) {
@@ -1504,22 +1541,17 @@ int main(int argc, char **argv) {
 		root_node.type = NORMAL_NODE;
 		root_node.node = nbt_parse_file(f);
 		if(!root_node.node) {
-			fprintf(stderr, "%s: Failed to mount %s, %s\n", argv[0], argv[optind], nbt_error_to_string(errno));
+			fprintf(stderr, "%s: Failed to mount %s, %s\n",
+				argv[0], mount_from, nbt_error_to_string(errno));
 			return 1;
 		}
 		root_node.pos.head = NULL;
 		root_node.chunk = NULL;
 		if(f != nbt_file) fclose(f);
 		if(compression == -1) compression = STRAT_GZIP;
-		syslog(LOG_DEBUG, "NBT %s loaded successfully", argv[optind]);
+		syslog(LOG_DEBUG, "NBT %s loaded successfully", mount_from);
 	}
-	fuse_argc += argc - optind - 1;
-	fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
-	if(!fuse_argv) {
-		perror("realloc");
-		return 1;
-	}
-	fuse_argv[0] = argv[optind];
-	memcpy(fuse_argv + (fuse_argc - (argc - optind - 1)), argv + optind + 1, (argc - optind) * sizeof(char *));
+	fuse_argv[0] = mount_from;
+	fuse_argv[fuse_argc - 1] = mount_point;
 	return fuse_main(fuse_argc, fuse_argv, &operations, NULL);
 }
