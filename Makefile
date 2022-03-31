@@ -32,4 +32,4 @@ libnbt.a:	$(LIBNBT_OBJECTS)
 	$(AR) -rcs $@ buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
 clean:
-	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a $(LIBNBT_OBJECTS)
+	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a syncwrite.o $(LIBNBT_OBJECTS)
