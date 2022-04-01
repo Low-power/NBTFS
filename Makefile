@@ -21,6 +21,8 @@ LIBNBT_OBJECTS := buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
 all:	nbtdump check regiondump mkfs.nbt mount.nbt
 
+.git/logs/HEAD:
+
 version.h:	.git/logs/HEAD
 	export TZ=UTC; \
 	if [ -f .git/HEAD ]; then \
