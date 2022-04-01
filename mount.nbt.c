@@ -1499,7 +1499,9 @@ not_an_option:
 		return -1;
 	}
 	int logopt = LOG_PID;
+#ifdef LOG_PERROR
 	if(foreground || verbose) logopt |= LOG_PERROR;
+#endif
 	openlog("mount.nbt", logopt, LOG_DAEMON);
 	myuid = getuid();
 	mygid = getgid();
