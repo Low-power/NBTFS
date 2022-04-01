@@ -1,0 +1,193 @@
+'\" t
+
+.TH mount.nbt 8
+
+.SH NAME
+mount.nbt - Mount a Named Binary Tag File System
+.SH SYNOPSIS
+.nf
+mount.nbt [-o \fI<fs-option>\fR[,\fI...\fR]] [-fnrvwh] \fI<nbt-file>\fR \fI<mount-point>\fR
+.fi
+.SH DESCRIPTION
+This tool is a FUSE-based file system implementation for accessing NBT formatted data, which is used by Minecraft to store various data about the game. Running this tool mounts a file system from the file specified by \fI<nbt-file>\fR; both standalone NBT file (usually have suffix \fI.dat\fR) and Minecraft Region file (usually have suffix \fI.mcr\fR or \fI.mca\fR) are supported.
+.SH OPTIONS
+.sp
+
+.B
+.IP -f
+Operate in foreground. Useful for debugging.
+
+.B
+.IP -h
+Print a brief usage message.
+
+.B
+.IP -n
+Ignored.
+
+.B
+.IP "-o \fI<fs-option>\fR[,\fI...\fR]"
+Pass gereric mount options, FUSE-specific options, and/or NBT-specific options, in a comma-separated list. See \fBmount(8)\fR and \fBfuse(8)\fR for gereric mount options and FUSE-specific options.
+.sp
+NBT-specific options are:
+.RS
+.TP
+.B ro
+Mount the file system read-only, useful to mount from a file that can't be written to, or to prevent accidentally changing it; but see \fBwritefile\fR option below.
+.TP
+.B rw
+Revert any \fBro\fR option that may be specified early.
+.TP
+.B region
+Specify the \fI<nbt-file>\fR is a Minecraft Region file instead of a standalone NBT file.
+.TP
+.B typeprefix
+Use node type prefix for node names when listing compound nodes as a directory. This option affects directory listing only, existing nodes can always be accessed either with or without the type prefix.
+.TP
+.B umask=\fI<mask>\fR
+Set file mode mask using an octal number for NBT nodes, default 0.
+.TP
+.B writefile=\fI<path>\fR
+Set an alternative path for writing NBT data; the original \fI<nbt-file>\fR won't be written to if this is specified. Will have no effect when file system is mounted read-only.
+.TP
+.B compression={gzip|zlib}
+Set compression format for writing NBT data; default \fBgzip\fR for standalone NBT file, \fBzlib\fR for Minecraft Region file. Will have no effect when file system is mounted read-only.
+.RE
+
+.B
+.IP -r
+Mount the file system read-only. Same as specifying \fB-o ro\fR.
+
+.B
+.IP -v
+Be Verbose during mounting.
+
+.B
+.IP -w
+Mount the file system read-write. Same as specifying \fB-o rw\fR.
+
+.SH NODE TYPES
+.PP
+NBT specification defined several types for a tag, they are mapped into file types as followings:
+
+.TS
+box;
+l l l.
+NBT Tag Type	File Type	Type Prefix Name
+TAG_Byte	Regular	int8, byte
+TAG_Short	Regular	int16
+TAG_Int	Regular	int32
+TAG_Long	Regular	int64
+TAG_Float	Regular	float32, float, single
+TAG_Double	Regular	float64, double
+TAG_Byte_Array	Regular	int8array, bytearray
+TAG_String	Regular	string
+TAG_List	Directory	list
+TAG_Compound	Directory	compound
+TAG_Int_Array	Directory	int32array
+TAG_Long_Array	Directory	int64array
+.TE
+
+.SH ACCESSING NODES
+.SS Referencing Nodes Under Compound
+For nodes directly under a \fBcompound\fR, they can be accessed using their name; a \fBtype prefix\fR can also be prepended to an name to reference a node, as \fItypeprefix\fR:\fIname\fR.
+For example an \fBint64\fR node named \fBRandomSeed\fR under a \fBcompound\fR named \fBData\fR, the following 2 pathes would referencing the exactly same node:
+.RS
+Data/int64:RandomSeed
+.br
+compound:Data/RandomSeed
+.RE
+Turning on mount option \fBtypeprefix\fR will having this \fBtype prefix\fR be automatically prepended to node names, when listing a \fBcompound\fR using \fBreaddir(3)\fR; this could be useful to preserve the type information when copying a \fBcompound\fR node recursively (such as using \fBtar(1)\fR), so it is possible for the copied nodes be restored into another NBT later.
+.SS Referencing Nodes Under List
+Nodes under a \fBlist\fR are accessed using index numbers starting with 0; they will also have same type, a pseudo file \fB.type\fR is available under any \fBlist\fR to indicate node type the list contains.
+.SS Accessing Individual Node
+Any node which the file type is regular file can be read and written directly using \fBread(2)\fR and \fBwrite(2)\fR; they can also be \fBtruncate(2)\fRed to empty, but number typed (
+.B int8
+,
+.B int16
+,
+.B int32
+,
+.B int64
+,
+.B float32
+and
+.B float64
+) nodes will turn its value into 0 after that.
+Nodes with type \fBint8array\fR or \fBstring\fR support \fBlseek(2)\fR and unlimited \fBtruncate(2)\fR operations.
+Reading from a \fBstring\fR node will have an additional line feed character (\\n) appended to the end automatically; similarly, writing to a \fBstring\fR node will have the ending line feed character stripped if exist.
+.PP
+\fBlist\fR and \fBcompound\fR nodes can contain other nodes, accessing them according to above rules.
+.PP
+\fBint32array\fR and \fBint64array\fR nodes are represented as directories, the array elements are accessed using an index number starting with 0, as regular files under the directory.
+Creating a new regular file with appreciate index number under the directory extends the array, and any element between the old tail index and new index will appear automatically as well; newly added elements will initialized to 0.
+An array can also be shrunk by removing (\fBunlink(2)\fR) the tail element, one element at a time; as a design limitation, only the tail element can be removed.
+On supported platforms, the array nodes may also be read directly (using \fBread(2)\fR); in this case seeking is supported only when aligned to element size, which is 4 or 8 for \fBint32array\fR or \fBint64array\fR respectively. The data stream read directly from an array will be the binary representation of the array elements in \fBhost byte order\fR.
+
+.SH ADDING AND REMOVING NODES
+.SS Under Compound
+Nodes under a \fBcompound\fR can be removed by using \fBunlink(2)\fR or \fBrmdir(2)\fR, according to their represented file type; usual file system restrictions on directory apply, meaning they can not be removed unless empty.
+.PP
+Unlike referencing an existing node, creating a new node under a \fBcompound\fR must use a type prefixed name.
+.SS Under List
+Like \fBcompound\fR, nodes under a \fBlist\fR may be removed by using either \fBunlink(2)\fR or \fBrmdir(2)\fR; if a non-tail node was removed, the index number of later nodes will be shifted backward by 1, which could be surprising when trying to remove multiple nodes.
+.PP
+New node may be added only to the tail of a \fBlist\fR, there is currently not possible to insert a node in middle of a list. Newly created node will have the type specified by the list type, indicated by the \fB.type\fR pseude file.
+.PP
+The list type may also be changed by writing a \fBtype prefix name\fR into \fB.type\fR, but only when the list is empty.
+.SS Special Requirement For Creating List Node
+A \fBlist\fR node may be created under either \fBcompound\fR or \fBlist\fR using \fBmkdir(2)\fR according to rules above, but please note newly created list will have an invalid list type; no node can be created under such list, and if a file system is unmounted with it, writing NBT data will fail, causing all modifications to be lost!
+Any newly created list must be initiailized with a supported list type, by writing the type prefix name to its \fB.type\fR pseude file.
+
+.SH CAVEATS
+.PP
+Data is commited to underlying \fI<nbt-file>\fR only upon unmounting; if anything went wrong during this process, the error message will be sent to \fBsyslog(3)\fR, and the file system will be unmounted without saving some or all data.
+.PP
+When modifying a Minecraft Region file, it is currently not possible to extend a modified chunk beyond the space available for the chunk in that Region file; although this rarely happen unless a considerable amount of additional data was copied into a chunk. If this happens, such chunk will not be saved.
+
+.SH EXAMPLES
+.PP
+The following examples took place in an Unix shell (\fBsh(1)\fR).
+.LP
+Mount a standalone NBT file \fI/tmp/level.dat\fR at \fI/mnt/nbt\fR, prepare to write a new NBT file at \fI/tmp/new-level.dat\fR:
+.sp
+.in +2
+.nf
+mount -o writefile=/tmp/new-level.dat /tmp/level.dat /mnt/nbt
+.fi
+.in -2
+.sp
+.LP
+Mount a Minecraft Region file \fI/tmp/r.0.-1.mcr\fR at \fI/mnt/region\fR, with \fBtype prefix\fR turned on for node name listing:
+.sp
+.in +2
+.nf
+mount -o region,typeprefix /tmp/r.0.-1.mcr /mnt/region
+.fi
+.in -2
+.sp
+.LP
+Working in a \fBcompound\fR, create and write a new \fBstring\fR node named \fIid\fR:
+.sp
+.in +2
+.nf
+echo Villager > string:id
+.fi
+.in -2
+.LP
+Working in a \fBcompound\fR, create a new \fBlist\fR node \fIPos\fR with list type set to \fBfloat64\fR, then create and write first node in the list:
+.sp
+.in +2
+.nf
+mkdir list:Pos
+echo float64 > Pos/.type
+echo 31.5 > Pos/0
+.fi
+.in -2
+.sp
+
+.SH "SEE ALSO"
+.PP
+fuse(8), fusermount(8), mount(8)
+.PP
+Named Binary Tag specification by Mojang

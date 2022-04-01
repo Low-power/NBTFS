@@ -3,6 +3,9 @@ Region files. The primary part is a FUSE-based file system implementation
 which allowing NBT file or Minecraft Region file be mounted as a file system,
 and then modified using normal file operations.
 
+NBT parser and writer are originally written by Lukas Niederbremer as cNBT
+project which this project is based on.
+
 INSTALL
 =======
 To build it from source, make sure you have GCC or a compatible C compiler,
@@ -21,30 +24,10 @@ MONUT THE FILE SYSTEM
 Use program mount.nbt(8) to mount the file system from a NBT file or a Region
 file. The synopsis of the command line is:
 	mount.nbt [-o <fs-options>] [<other-options>] <mount-from-file> <mount-point>
-The <fs-options> accepts both FUSE-specific and NBTFS-specific mount options,
-some useful ones are:
-	ro		Mount the file system read-only, useful to mount from
-			a file that can't be written to, or to prevent
-			accidentally changing it; but see 'writefile' option
-			later
-	rw		Revert any early 'ro' option
-	region		Specify the mount from file is a Minecraft Region
-			file instead of a standalone NBT file
-	typeprefix	Use node type prefix for node names when listing
-			compound nodes as a directory
-	umask=<mask>	Set file mode mask using an octal number for NBT
-			nodes, default 0
-	writefile=<path>	Set an alternative path for writing NBT data;
-				the original mount from file won't be written
-				to if this is specified; has no effect when
-				file system is mounted read-only
-	compression={gzip|zlib}	Set compression format for writing NBT data;
-				default 'gzip' for NBT file, 'zlib' for
-				Region file; has no effect when file system
-				is mounted read-only
-Note the writing happens only when the file system is unmounted; if anything
-went wrong during this process, the error message will be sent to syslog(3),
-and unfortunately the data is most likely be lost as a result.
+The <fs-options> accepts both generic and FS-specific mount options; some
+of them are useful to specify here; see man page mount.nbt(8) for a detailed
+description of each FS-specific option.
+
 Example:
 	# mount.nbt -o ro,region,umask=0022 /usr/home/minecraft/aether-realm/world/AETHER/region/r.1.1.mca /mnt/region/
 	# ls -al /mnt/region/80/Level/

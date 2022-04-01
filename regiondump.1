@@ -1,0 +1,14 @@
+.TH regiondump 1
+
+.SH NAME
+regiondump - Dump all information of a Minecraft Region file
+.SH SYNOPSIS
+.nf
+regiondump \fI<path>\fR
+.fi
+.SH DESCRIPTION
+.B regiondump
+displays header information of available chunks, and a NBT tree dump in text form, of every available chunk, from the Minecraft Region file specified by \fI<path>\fR.
+.SH BUGS
+Dumping all chunks in text form from a region file would usually output large amount of text, which could flooding the terminal of an unprepared user.
+It should support some options to allow dumping only the region header or some specified chucks, instead of all information.

@@ -1,0 +1,25 @@
+.TH mkfs.nbt 8
+
+.SH NAME
+mkfs.nbt - Create a Named Binary Tag File System
+.SH SYNOPSIS
+.nf
+mkfs.nbt [-C {gzip|zlib}] [-L \fI<root-node-name>\fR] [-vh] \fI<path>\fR
+.fi
+.SH DESCRIPTION
+.B mkfs.nbt
+creates a standalone NBT file at \fI<path>\fR containting a single \fBcompound\fR as root node. If a regular file at \fI<path>\fR already exist, it will be truncated.
+.SH OPTIONS
+.B
+.IP "-C {gzip|zlib}"
+Specify the compression format for the NBT file. Default is \fIgzip\fR.
+.B
+.IP -h
+Print a brief usage message.
+.B
+.IP "-L \fI<root-node-name>\fR"
+Specify name of the root \fBcompound\fR node. Default an empty string.
+.B
+.IP -v
+Be Verbose. Print a text dump of the NBT tree to be written into \fI<path>\fR.
+
