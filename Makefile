@@ -10,6 +10,8 @@ AR ?= ar
 CFLAGS += -g -Wall -Wextra -Wno-unused-parameter -Wno-switch -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -std=gnu99
 CFLAGS += -D _FILE_OFFSET_BITS=64
 
+export TZ := UTC
+
 LIBNBT_OBJECTS := buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
 all:	nbtdump check regiondump mkfs.nbt mount.nbt
@@ -20,7 +22,7 @@ version.h:
 	elif [ -f $@ ]; then \
 		touch $@; \
 	else \
-		false; \
+		printf "#define NBTFSUTILS_VERSION \"local-snapshot-%s\"\\n" "`date +%Y%m%d`" > $@; \
 	fi
 
 mount.nbt:	mount.nbt.c version.h syncwrite.o libnbt.a
