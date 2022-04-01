@@ -5,6 +5,7 @@
 	file, You can obtain one at https://mozilla.org/MPL/2.0/.
 */
 
+#include "version.h"
 #define _FILE_OFFSET_BITS 64
 #define FUSE_USE_VERSION 26
 #include <fuse/fuse.h>
@@ -1468,6 +1469,14 @@ int main(int argc, char **argv) {
 					break;
 				case 'h':
 					print_usage(argv[0]);
+					return 0;
+				case 'V':
+					puts("mount.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
+					puts("Copyright 2015-2022 Rivoreo");
+					puts("This Executable Form of the program can be redistributed under the terms of\n"
+						"the Mozilla Public License, version 2.0.");
+					puts("The program is provided without any warranty. See Mozilla Public License,\n"
+						"version 2.0 for details.");
 					return 0;
 				default:
 					fprintf(stderr, "%s: Invalid option '-%c'\n", argv[0], o[-1]);

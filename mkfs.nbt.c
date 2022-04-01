@@ -20,6 +20,7 @@
 	WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#include "version.h"
 #include "nbt.h"
 #include <unistd.h>
 #include <string.h>
@@ -36,7 +37,7 @@ int main(int argc, char **argv) {
 	char *root_node_name = (char *)"";
 	int verbose = 0;
 	while(1) {
-		int c = getopt(argc, argv, "C:L:N:vh");
+		int c = getopt(argc, argv, "C:L:N:vhV");
 		if(c == -1) break;
 		switch(c) {
 			case 'C':
@@ -57,6 +58,12 @@ int main(int argc, char **argv) {
 				break;
 			case 'h':
 				print_usage(argv[0]);
+				return 0;
+			case 'V':
+				puts("mkfs.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
+				puts("Copyright 2015-2022 Rivoreo");
+				puts("This is free software; see the source for copying conditions.");
+				puts("The program is provided without any warranty, to the extent permitted by law.");
 				return 0;
 			case '?':
 				return -1;

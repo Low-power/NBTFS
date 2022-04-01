@@ -14,15 +14,24 @@ LIBNBT_OBJECTS := buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
 
 all:	nbtdump check regiondump mkfs.nbt mount.nbt
 
-mount.nbt:	mount.nbt.c syncwrite.o libnbt.a
+version.h:
+	if [ -f .git/HEAD ]; then \
+		printf "#define NBTFSUTILS_VERSION \"%s\"\\n" "`git show --format=%cd_%h --date short --quiet | sed -e 's/-//g' -e 's/_/-/'`" > $@; \
+	elif [ -f $@ ]; then \
+		touch $@; \
+	else \
+		false; \
+	fi
+
+mount.nbt:	mount.nbt.c version.h syncwrite.o libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) mount.nbt.c syncwrite.o -o $@ -L . -l nbt -l z -l fuse $(LIBS)
 
 # For GNU Make
-%:	%.c libnbt.a
+%:	%.c version.h libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z $(LIBS)
 
 # For BSD make
-.c:	libnbt.a
+.c:	version.h libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z $(LIBS)
 
 test: check
@@ -33,3 +42,5 @@ libnbt.a:	$(LIBNBT_OBJECTS)
 
 clean:
 	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a syncwrite.o $(LIBNBT_OBJECTS)
+
+.PHONY:	version.h clean
