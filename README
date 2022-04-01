@@ -19,6 +19,14 @@ configure the build:
 Example:
 	$ CC=gcc CFLAGS=-Os make
 
+To install built programs and manual pages, type 'make install'; some
+attitional environment variables may be used here:
+	PREFIX		installing prefix, default /usr/local
+	BINDIR		default ${PREFIX}/bin
+	SBINDIR		default ${PREFIX}/sbin
+	DATADIR		default ${PREFIX}/share
+	MANDIR		default ${DATADIR}/man
+
 MONUT THE FILE SYSTEM
 =====================
 Use program mount.nbt(8) to mount the file system from a NBT file or a Region
