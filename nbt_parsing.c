@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define INDENT_SIZE 2
+
 /* are we running on a little-endian system? */
 static int little_endian()
 {
@@ -465,14 +467,10 @@ nbt_node* nbt_parse(const void* mem, size_t len)
 /* spaces, not tabs ;) */
 static void indent(struct buffer* b, size_t amount)
 {
-    size_t spaces = amount * 4; /* 4 spaces per indent */
-
-    char temp[spaces + 1];
-
-    for(size_t i = 0; i < spaces; ++i)
-        temp[i] = ' ';
-    temp[spaces] = '\0';
-
+	size_t size = amount * INDENT_SIZE;
+	char temp[size + 1];
+	memset(temp, ' ', size);
+	temp[size] = '\0';
     bprintf(b, "%s", temp);
 }
 
