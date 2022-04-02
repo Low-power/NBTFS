@@ -132,7 +132,7 @@ On supported platforms, the array nodes may also be read directly (using \fBread
 .SS Under Compound
 Nodes under a \fBcompound\fR can be removed by using \fBunlink(2)\fR or \fBrmdir(2)\fR, according to their represented file type; usual file system restrictions on directory apply, meaning they can not be removed unless empty.
 .PP
-Unlike referencing an existing node, creating a new node under a \fBcompound\fR must use a type prefixed name.
+Unlike referencing an existing node, creating a new node under a \fBcompound\fR must use a type-prefixed name.
 .SS Under List
 Like \fBcompound\fR, nodes under a \fBlist\fR may be removed by using either \fBunlink(2)\fR or \fBrmdir(2)\fR; if a non-tail node was removed, the index number of later nodes will be shifted backward by 1, which could be surprising when trying to remove multiple nodes.
 .PP
@@ -157,7 +157,7 @@ Mount a standalone NBT file \fI/tmp/level.dat\fR at \fI/mnt/nbt\fR, prepare to w
 .sp
 .in +2
 .nf
-mount -o writefile=/tmp/new-level.dat /tmp/level.dat /mnt/nbt
+mount.nbt -o writefile=/tmp/new-level.dat /tmp/level.dat /mnt/nbt
 .fi
 .in -2
 .sp
@@ -166,7 +166,7 @@ Mount a Minecraft Region file \fI/tmp/r.0.-1.mcr\fR at \fI/mnt/region\fR, with \
 .sp
 .in +2
 .nf
-mount -o region,typeprefix /tmp/r.0.-1.mcr /mnt/region
+mount.nbt -o region,typeprefix /tmp/r.0.-1.mcr /mnt/region
 .fi
 .in -2
 .sp
