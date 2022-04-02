@@ -22,6 +22,11 @@
 
 #define INDENT_SIZE 2
 
+struct output_target {
+	struct buffer *buffer;
+	FILE *file;
+};
+
 /* are we running on a little-endian system? */
 static int little_endian()
 {
@@ -103,10 +108,19 @@ static nbt_node* parse_unnamed_tag(nbt_type type, char* name, const char** memor
 } while(0)
 
 /* printfs into the end of a buffer. Note: no null-termination! */
-static void bprintf(struct buffer* b, const char* restrict format, ...)
+static void bprintf(struct output_target *target, const char* restrict format, ...)
 {
     va_list args;
     int siz;
+
+	if(target->file) {
+		va_start(args, format);
+		vfprintf(target->file, format, args);
+		va_end(args);
+		return;
+	}
+
+	struct buffer *b = target->buffer;
 
     va_start(args, format);
     siz = vsnprintf(NULL, 0, format, args);
@@ -465,140 +479,133 @@ nbt_node* nbt_parse(const void* mem, size_t len)
 }
 
 /* spaces, not tabs ;) */
-static void indent(struct buffer* b, size_t amount)
+static void indent(struct output_target *target, size_t amount)
 {
 	size_t size = amount * INDENT_SIZE;
 	char temp[size + 1];
 	memset(temp, ' ', size);
 	temp[size] = '\0';
-    bprintf(b, "%s", temp);
+	bprintf(target, "%s", temp);
 }
 
-static nbt_status __nbt_dump_ascii(const nbt_node*, struct buffer*, size_t ident);
+static nbt_status __nbt_dump_ascii(const nbt_node *, struct output_target *, size_t);
 
 /* prints the node's name, or (null) if it has none. */
 #define SAFE_NAME(node) ((node)->name ? (node)->name : "<null>")
 
-static void dump_byte_array(const struct nbt_byte_array ba, struct buffer* b)
+static void dump_byte_array(const struct nbt_byte_array ba, struct output_target *target)
 {
     assert(ba.length >= 0);
 
-    bprintf(b, "[ ");
-    for(int32_t i = 0; i < ba.length; ++i)
-        bprintf(b, "%u ", +ba.data[i]);
-    bprintf(b, "]");
+	bprintf(target, "[ ");
+	for(int32_t i = 0; i < ba.length; ++i) {
+		bprintf(target, "%u ", +ba.data[i]);
+	}
+	bprintf(target, "]");
 }
 
-static void dump_int_array(const struct nbt_int_array ia, struct buffer* b)
+static void dump_int_array(const struct nbt_int_array ia, struct output_target *target)
 {
     assert(ia.length >= 0);
 
-    bprintf(b, "[ ");
-    for(int32_t i = 0; i < ia.length; ++i)
-        bprintf(b, "%u ", +ia.data[i]);
-    bprintf(b, "]");
+	bprintf(target, "[ ");
+	for(int32_t i = 0; i < ia.length; ++i) {
+		bprintf(target, "%u ", +ia.data[i]);
+	}
+	bprintf(target, "]");
 }
 
-static void dump_long_array(const struct nbt_long_array la, struct buffer* b)
+static void dump_long_array(const struct nbt_long_array la, struct output_target *target)
 {
     assert(la.length >= 0);
 
-    bprintf(b, "[ ");
-    for(int32_t i = 0; i < la.length; ++i)
-        bprintf(b, "%u ", +la.data[i]);
-    bprintf(b, "]");
+	bprintf(target, "[ ");
+	for(int32_t i = 0; i < la.length; ++i) {
+		bprintf(target, "%u ", +la.data[i]);
+	}
+	bprintf(target, "]");
 }
 
-static nbt_status dump_list_contents_ascii(const struct nbt_list* list, struct buffer* b, size_t ident)
+static nbt_status dump_list_contents_ascii(const struct nbt_list* list, struct output_target *target, size_t ident)
 {
     const struct list_head* pos;
 
     list_for_each(pos, &list->entry)
     {
-        const struct nbt_list* entry = list_entry(pos, const struct nbt_list, entry);
-        nbt_status err;
-
-        if((err = __nbt_dump_ascii(entry->data, b, ident)) != NBT_OK)
-            return err;
+		const struct nbt_list* entry = list_entry(pos, const struct nbt_list, entry);
+		nbt_status status = __nbt_dump_ascii(entry->data, target, ident);
+		if(status != NBT_OK) return status;
     }
 
     return NBT_OK;
 }
 
-static nbt_status __nbt_dump_ascii(const nbt_node* tree, struct buffer* b, size_t ident)
+static nbt_status __nbt_dump_ascii(const nbt_node* tree, struct output_target *target, size_t ident)
 {
     if(tree == NULL) return NBT_OK;
 
-    indent(b, ident);
+	indent(target, ident);
 
-    if(tree->type == TAG_BYTE)
-        bprintf(b, "TAG_Byte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
-    else if(tree->type == TAG_SHORT)
-        bprintf(b, "TAG_Short(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
-    else if(tree->type == TAG_INT)
-        bprintf(b, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_int);
-    else if(tree->type == TAG_LONG)
-        bprintf(b, "TAG_Long(\"%s\"): %" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
-    else if(tree->type == TAG_FLOAT)
-        bprintf(b, "TAG_Float(\"%s\"): %f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
-    else if(tree->type == TAG_DOUBLE)
-        bprintf(b, "TAG_Double(\"%s\"): %f\n", SAFE_NAME(tree), tree->payload.tag_double);
-    else if(tree->type == TAG_BYTE_ARRAY)
-    {
-        bprintf(b, "TAG_Byte_Array(\"%s\"): ", SAFE_NAME(tree));
-        dump_byte_array(tree->payload.tag_byte_array, b);
-        bprintf(b, "\n");
-    }
-    else if(tree->type == TAG_INT_ARRAY)
-    {
-        bprintf(b, "Tag_Int_Array(\"%s\"): ", SAFE_NAME(tree));
-        dump_int_array(tree->payload.tag_int_array, b);
-        bprintf(b, "\n");
-    }
-    else if(tree->type == TAG_LONG_ARRAY)
-    {
-        bprintf(b, "Tag_Long_Array(\"%s\"): ", SAFE_NAME(tree));
-        dump_long_array(tree->payload.tag_long_array, b);
-        bprintf(b, "\n");
-    }
-    else if(tree->type == TAG_STRING)
-    {
-        if(tree->payload.tag_string == NULL)
-            return NBT_ERR;
-
-        bprintf(b, "TAG_String(\"%s\"): %s\n", SAFE_NAME(tree), tree->payload.tag_string);
-    }
-    else if(tree->type == TAG_LIST)
-    {
-        bprintf(b, "TAG_List(\"%s\") [%s]\n", SAFE_NAME(tree), nbt_type_to_string(tree->payload.tag_list->data->type));
-        indent(b, ident);
-        bprintf(b, "{\n");
-
-        nbt_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1);
-
-        indent(b, ident);
-        bprintf(b, "}\n");
-
-        if(err != NBT_OK)
-            return err;
-    }
-    else if(tree->type == TAG_COMPOUND)
-    {
-        bprintf(b, "TAG_Compound(\"%s\")\n", SAFE_NAME(tree));
-        indent(b, ident);
-        bprintf(b, "{\n");
-
-        nbt_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1);
-
-        indent(b, ident);
-        bprintf(b, "}\n");
-
-        if(err != NBT_OK)
-            return err;
-    }
-
-    else
-        return NBT_ERR;
+	switch(tree->type) {
+		nbt_status status;
+		case TAG_BYTE:
+			bprintf(target, "TAG_Byte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
+			break;
+		case TAG_SHORT:
+			bprintf(target, "TAG_Short(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
+			break;
+		case TAG_INT:
+			bprintf(target, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_int);
+			break;
+		case TAG_LONG:
+			bprintf(target, "TAG_Long(\"%s\"): %" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
+			break;
+		case TAG_FLOAT:
+			bprintf(target, "TAG_Float(\"%s\"): %f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
+			break;
+		case TAG_DOUBLE:
+			bprintf(target, "TAG_Double(\"%s\"): %f\n", SAFE_NAME(tree), tree->payload.tag_double);
+			break;
+		case TAG_BYTE_ARRAY:
+			bprintf(target, "TAG_Byte_Array(\"%s\"): ", SAFE_NAME(tree));
+			dump_byte_array(tree->payload.tag_byte_array, target);
+			bprintf(target, "\n");
+			break;
+		case TAG_INT_ARRAY:
+			bprintf(target, "Tag_Int_Array(\"%s\"): ", SAFE_NAME(tree));
+			dump_int_array(tree->payload.tag_int_array, target);
+			bprintf(target, "\n");
+			break;
+		case TAG_LONG_ARRAY:
+			bprintf(target, "Tag_Long_Array(\"%s\"): ", SAFE_NAME(tree));
+			dump_long_array(tree->payload.tag_long_array, target);
+			bprintf(target, "\n");
+			break;
+		case TAG_STRING:
+			if(tree->payload.tag_string == NULL) return NBT_ERR;
+			bprintf(target, "TAG_String(\"%s\"): %s\n", SAFE_NAME(tree), tree->payload.tag_string);
+			break;
+		case TAG_LIST:
+			bprintf(target, "TAG_List(\"%s\") [%s]\n", SAFE_NAME(tree), nbt_type_to_string(tree->payload.tag_list->data->type));
+			indent(target, ident);
+			bprintf(target, "{\n");
+			status = dump_list_contents_ascii(tree->payload.tag_list, target, ident + 1);
+			indent(target, ident);
+			bprintf(target, "}\n");
+			if(status != NBT_OK) return status;
+			break;
+		case TAG_COMPOUND:
+			bprintf(target, "TAG_Compound(\"%s\")\n", SAFE_NAME(tree));
+			indent(target, ident);
+			bprintf(target, "{\n");
+			status = dump_list_contents_ascii(tree->payload.tag_compound, target, ident + 1);
+			indent(target, ident);
+			bprintf(target, "}\n");
+			if(status != NBT_OK) return status;
+			break;
+		default:
+			return NBT_ERR;
+	}
 
     return NBT_OK;
 }
@@ -609,10 +616,10 @@ char* nbt_dump_ascii(const nbt_node* tree)
 
     assert(tree);
 
-    struct buffer b = BUFFER_INIT;
-
-    if((errno = __nbt_dump_ascii(tree, &b, 0)) != NBT_OK) goto OOM;
-    if(         buffer_reserve(&b, b.len + 1))            goto OOM;
+	struct buffer b = BUFFER_INIT;
+	struct output_target target = { .buffer = &b };
+	if((errno = __nbt_dump_ascii(tree, &target, 0)) != NBT_OK) goto OOM;
+	if(buffer_reserve(&b, b.len + 1))                          goto OOM;
 
     b.data[b.len] = '\0'; /* null-terminate that biatch, since bprintf doesn't
                              do that for us. */
@@ -625,6 +632,12 @@ OOM:
 
     buffer_free(&b);
     return NULL;
+}
+
+nbt_status nbt_dump_ascii_file(const nbt_node* tree, FILE *file) {
+	if(!file) return NBT_ERR;
+	struct output_target target = { .file = file };
+	return __nbt_dump_ascii(tree, &target, 0);
 }
 
 static nbt_status dump_byte_array_binary(const struct nbt_byte_array ba, struct buffer* b)

@@ -193,6 +193,11 @@ nbt_node* nbt_parse(const void* memory, size_t length);
 char* nbt_dump_ascii(const nbt_node* tree);
 
 /*
+ * Dump an ascii representation of a tree into a file. Returns status code.
+ */
+nbt_status nbt_dump_ascii_file(const nbt_node* tree, FILE *file);
+
+/*
  * Returns a buffer representing the uncompressed tree in Notch's official
  * binary format. Trees dumped with this function can be regenerated with
  * nbt_parse. If an error occurs, a buffer with a NULL `data' pointer will be

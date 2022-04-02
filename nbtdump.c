@@ -1,89 +1,59 @@
-/*
- * -----------------------------------------------------------------------------
- * "THE BEER-WARE LICENSE" (Revision 42):
- * <webmaster@flippeh.de> wrote this file. As long as you retain this notice you
- * can do whatever you want with this stuff. If we meet some day, and you think
- * this stuff is worth it, you can buy me a beer in return. Lukas Niederbremer.
- * -----------------------------------------------------------------------------
- */
+/*	Copyright 2015-2022 Rivoreo
+
+	Permission is hereby granted, free of charge, to any person obtaining
+	a copy of this software and associated documentation files (the
+	"Software"), to deal in the Software without restriction, including
+	without limitation the rights to use, copy, modify, merge, publish,
+	distribute, sublicense, and/or sell copies of the Software, and to
+	permit persons to whom the Software is furnished to do so, subject to
+	the following conditions:
+
+	The above copyright notice and this permission notice shall be
+	included in all copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+	EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+	NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE
+	FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+	CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+	WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
 #include "nbt.h"
-
-#include <assert.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <getopt.h>
+#include <stdio.h>
+#include <errno.h>
 
-void dump_nbt(const char *filename);
+int main(int argc, char **argv) {
+	if(argv[1] && strcmp(argv[1], "--") == 0) {
+		argc--;
+		argv[1] = argv[0];
+		argv++;
+	}
+	if(argc != 2) {
+		fprintf(stderr, "Usage: %s <nbt-file>\n", argv[0]);
+		return -1;
+	}
 
-int main(int argc, char **argv)
-{
-    int c;
+	FILE *f = fopen(argv[1], "rb");
+	if(!f) {
+		perror(argv[1]);
+		return 1;
+	}
 
-    //opterr = 0;
-    for (;;)
-    {
-        static struct option long_options[] =
-        {
-            {"version", no_argument, NULL, 'v'},
-            {NULL,      no_argument, NULL, 0}
-        };
-
-        int option_index = 0;
-
-        if ((c = getopt_long(argc, argv, "v", long_options, &option_index)) < 0)
-            break;
-
-        switch (c)
-        {
-            case 0:
-                if (long_options[option_index].flag != 0)
-                    break;
-
-                break;
-
-            case 'v':
-                printf("%s 1.2 (%s, %s)\n", argv[0], __DATE__, __TIME__);
-
-                return EXIT_SUCCESS;
-
-            case '?':
-                break;
-        }
-    }
-
-    if (optind < argc)
-    {
-        /* Make sure a file was given */
-        dump_nbt(argv[optind]);
-    }
-
-    return 0;
-}
-
-void dump_nbt(const char *filename)
-{
-    assert(errno == NBT_OK);
-
-    FILE* f = fopen(filename, "rb");
-    nbt_node* root = nbt_parse_file(f);
-    fclose(f);
-
-    if(errno != NBT_OK)
-    {
-        fprintf(stderr, "Parsing error!\n");
-        return;
-    }
-
-    char* str = nbt_dump_ascii(root);
-    nbt_free(root);
-
-    if(str == NULL)
-        fprintf(stderr, "Printing error!");
-
-    printf("%s", str);
-
-    free(str);
+	struct nbt_node *root_node = nbt_parse_file(f);
+	if(!root_node) {
+		fprintf(stderr, "%s: Failed to load '%s', %s\n",
+			argv[0], argv[1], nbt_error_to_string(errno));
+		return 1;
+	}
+	fclose(f);
+	nbt_status status = nbt_dump_ascii_file(root_node, stdout);
+	if(status != NBT_OK) {
+		fprintf(stderr, "%s: Failed to stringify NBT data from '%s', %s\n",
+			argv[0], argv[1], nbt_error_to_string(status));
+		return 1;
+	}
+	return 0;
 }

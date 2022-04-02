@@ -126,12 +126,9 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "Failed to decode data of chunk %u, %s\n", i, nbt_error_to_string(errno));
 			continue;
 		}
-		char *s = nbt_dump_ascii(node);
-		if(s) {
-			puts(s);
-			free(s);
-		} else {
-			fprintf(stderr, "Failed to stringify data of chunk %u, %s\n", i, nbt_error_to_string(errno));
+		nbt_status status = nbt_dump_ascii_file(node, stdout);
+		if(status != NBT_OK) {
+			fprintf(stderr, "Failed to stringify data of chunk %u, %s\n", i, nbt_error_to_string(status));
 		}
 		nbt_free(node);
 	}
