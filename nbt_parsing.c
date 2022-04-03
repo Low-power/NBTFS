@@ -490,9 +490,6 @@ static void indent(struct output_target *target, size_t amount)
 
 static nbt_status __nbt_dump_ascii(const nbt_node *, struct output_target *, size_t);
 
-/* prints the node's name, or (null) if it has none. */
-#define SAFE_NAME(node) ((node)->name ? (node)->name : "<null>")
-
 static void dump_byte_array(const struct nbt_byte_array ba, struct output_target *target)
 {
     assert(ba.length >= 0);
@@ -540,6 +537,33 @@ static nbt_status dump_list_contents_ascii(const struct nbt_list* list, struct o
     return NBT_OK;
 }
 
+static const char *quoted_string(const char *s) {
+	static char buffer[8192] = { '"' };
+	if(!s) return "null";
+	unsigned int i = 1;
+	while(*s) {
+		if(i >= sizeof buffer - 7) {
+			memcpy(buffer + i, "...", 3);
+			break;
+		}
+		switch(*s) {
+			case '\n':
+				buffer[i++] = '\\';
+				buffer[i++] = 'n';
+				s++;
+				break;
+			case '"':
+				buffer[i++] = '\\';
+				// Fallthrough
+			default:
+				buffer[i++] = *s++;
+		}
+	}
+	buffer[i++] = '"';
+	buffer[i] = 0;
+	return buffer;
+}
+
 static nbt_status __nbt_dump_ascii(const nbt_node* tree, struct output_target *target, size_t ident)
 {
     if(tree == NULL) return NBT_OK;
@@ -549,55 +573,59 @@ static nbt_status __nbt_dump_ascii(const nbt_node* tree, struct output_target *t
 	switch(tree->type) {
 		nbt_status status;
 		case TAG_BYTE:
-			bprintf(target, "TAG_Byte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
+			bprintf(target, "TAG_Byte(%s) %i\n",
+				quoted_string(tree->name), (int)tree->payload.tag_byte);
 			break;
 		case TAG_SHORT:
-			bprintf(target, "TAG_Short(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
+			bprintf(target, "TAG_Short(%s) %i\n",
+				quoted_string(tree->name), (int)tree->payload.tag_short);
 			break;
 		case TAG_INT:
-			bprintf(target, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_int);
+			bprintf(target, "TAG_Int(%s) %i\n",
+				quoted_string(tree->name), (int)tree->payload.tag_int);
 			break;
 		case TAG_LONG:
-			bprintf(target, "TAG_Long(\"%s\"): %" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
+			bprintf(target, "TAG_Long(%s) %" PRIi64 "\n",
+				quoted_string(tree->name), tree->payload.tag_long);
 			break;
 		case TAG_FLOAT:
-			bprintf(target, "TAG_Float(\"%s\"): %f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
+			bprintf(target, "TAG_Float(%s) %f\n",
+				quoted_string(tree->name), (double)tree->payload.tag_float);
 			break;
 		case TAG_DOUBLE:
-			bprintf(target, "TAG_Double(\"%s\"): %f\n", SAFE_NAME(tree), tree->payload.tag_double);
+			bprintf(target, "TAG_Double(%s) %f\n",
+				quoted_string(tree->name), tree->payload.tag_double);
 			break;
 		case TAG_BYTE_ARRAY:
-			bprintf(target, "TAG_Byte_Array(\"%s\"): ", SAFE_NAME(tree));
+			bprintf(target, "TAG_Byte_Array(%s) ", quoted_string(tree->name));
 			dump_byte_array(tree->payload.tag_byte_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_INT_ARRAY:
-			bprintf(target, "Tag_Int_Array(\"%s\"): ", SAFE_NAME(tree));
+			bprintf(target, "Tag_Int_Array(%s) ", quoted_string(tree->name));
 			dump_int_array(tree->payload.tag_int_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_LONG_ARRAY:
-			bprintf(target, "Tag_Long_Array(\"%s\"): ", SAFE_NAME(tree));
+			bprintf(target, "Tag_Long_Array(%s) ", quoted_string(tree->name));
 			dump_long_array(tree->payload.tag_long_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_STRING:
 			if(tree->payload.tag_string == NULL) return NBT_ERR;
-			bprintf(target, "TAG_String(\"%s\"): %s\n", SAFE_NAME(tree), tree->payload.tag_string);
+			bprintf(target, "TAG_String(%s) ", quoted_string(tree->name));
+			bprintf(target, "%s\n", quoted_string(tree->payload.tag_string));
 			break;
 		case TAG_LIST:
-			bprintf(target, "TAG_List(\"%s\") [%s]\n", SAFE_NAME(tree), nbt_type_to_string(tree->payload.tag_list->data->type));
-			indent(target, ident);
-			bprintf(target, "{\n");
+			bprintf(target, "TAG_List(%s) [%s] {\n",
+				quoted_string(tree->name), nbt_type_to_string(tree->payload.tag_list->data->type));
 			status = dump_list_contents_ascii(tree->payload.tag_list, target, ident + 1);
 			indent(target, ident);
 			bprintf(target, "}\n");
 			if(status != NBT_OK) return status;
 			break;
 		case TAG_COMPOUND:
-			bprintf(target, "TAG_Compound(\"%s\")\n", SAFE_NAME(tree));
-			indent(target, ident);
-			bprintf(target, "{\n");
+			bprintf(target, "TAG_Compound(%s) {\n", quoted_string(tree->name));
 			status = dump_list_contents_ascii(tree->payload.tag_compound, target, ident + 1);
 			indent(target, ident);
 			bprintf(target, "}\n");
