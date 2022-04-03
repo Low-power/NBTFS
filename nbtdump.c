@@ -50,6 +50,7 @@ int main(int argc, char **argv) {
 	}
 	fclose(f);
 	nbt_status status = nbt_dump_ascii_file(root_node, stdout);
+	nbt_free(root_node);
 	if(status != NBT_OK) {
 		fprintf(stderr, "%s: Failed to stringify NBT data from '%s', %s\n",
 			argv[0], argv[1], nbt_error_to_string(status));

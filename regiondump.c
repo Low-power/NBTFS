@@ -127,10 +127,10 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		nbt_status status = nbt_dump_ascii_file(node, stdout);
+		nbt_free(node);
 		if(status != NBT_OK) {
 			fprintf(stderr, "Failed to stringify data of chunk %u, %s\n", i, nbt_error_to_string(status));
 		}
-		nbt_free(node);
 	}
 
 	return 0;
