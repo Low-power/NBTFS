@@ -563,6 +563,14 @@ static size_t get_size(struct wrapped_nbt_node *node) {
 	}
 }
 
+static int nbt_release(const char *path, struct fuse_file_info *fi) {
+	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	if(node == &root_node) return 0;
+	if(node->type == LIST_TYPE_NODE) free(node->node);
+	free(node);
+	return 0;
+}
+
 static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
 	struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
 	memset(stbuf, 0, sizeof *stbuf);
@@ -587,8 +595,7 @@ static int nbt_getattr(const char *path, struct stat *stbuf) {
 	if(!node) return -errno;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
 	int ne = nbt_fgetattr(path, stbuf, &fi);
-	if(node->type == LIST_TYPE_NODE) free(node->node);
-	else if(node != &root_node) free(node);
+	nbt_release(path, &fi);
 	return ne;
 }
 
@@ -703,8 +710,7 @@ static int nbt_truncate(const char *path, off_t length) {
 	if(!node) return -ENOENT;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
 	int ne = nbt_ftruncate(path, length, &fi);
-	if(node->type == LIST_TYPE_NODE) free(node->node);
-	else if(node != &root_node) free(node);
+	nbt_release(path, &fi);
 	return ne;
 }
 
@@ -870,14 +876,6 @@ static int nbt_unlink(const char *path) {
 
 static int nbt_rmdir(const char *path) {
 	return nbt_remove_node(path, 1);
-}
-
-static int nbt_release(const char *path, struct fuse_file_info *fi) {
-	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
-	if(node == &root_node) return 0;
-	if(node->type == LIST_TYPE_NODE) free(node->node);
-	free(node);
-	return 0;
 }
 
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
