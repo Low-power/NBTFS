@@ -26,7 +26,7 @@ all:	nbtdump check regiondump mkfs.nbt mount.nbt
 version.h:	.git/logs/HEAD
 	export TZ=UTC; \
 	if [ -f .git/HEAD ]; then \
-		printf "#define NBTFSUTILS_VERSION \"%s\"\\n" "`git show --format=%cd_%h --date short --quiet | sed -e 's/-//g' -e 's/_/-/'`" > $@; \
+		printf "#define NBTFSUTILS_VERSION \"%s\"\\n" "`git show --format=%cd_%h --date short --quiet | sed -e 1!d -e 's/-//g' -e 's/_/-/'`" > $@; \
 	elif [ -f $@ ]; then \
 		touch $@; \
 	else \
