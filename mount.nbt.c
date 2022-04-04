@@ -587,7 +587,8 @@ static int nbt_getattr(const char *path, struct stat *stbuf) {
 	if(!node) return -errno;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
 	int ne = nbt_fgetattr(path, stbuf, &fi);
-	if(node != &root_node) free(node);
+	if(node->type == LIST_TYPE_NODE) free(node->node);
+	else if(node != &root_node) free(node);
 	return ne;
 }
 
@@ -702,7 +703,8 @@ static int nbt_truncate(const char *path, off_t length) {
 	if(!node) return -ENOENT;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
 	int ne = nbt_ftruncate(path, length, &fi);
-	if(node != &root_node) free(node);
+	if(node->type == LIST_TYPE_NODE) free(node->node);
+	else if(node != &root_node) free(node);
 	return ne;
 }
 
