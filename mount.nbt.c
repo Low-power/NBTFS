@@ -387,6 +387,11 @@ static struct wrapped_nbt_node *create_node(struct wrapped_nbt_node *parent, con
 				return NULL;
 			}
 			name = p + 1;
+			if(!*name) {
+				if(parent != orig_parent_node) free(parent);
+				errno = EINVAL;
+				return NULL;
+			}
 			parent_list_head = &parent->node->payload.tag_compound->entry;
 			list_for_each(pos, parent_list_head) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
