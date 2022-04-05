@@ -496,7 +496,7 @@ static void dump_byte_array(const struct nbt_byte_array ba, struct output_target
 
 	bprintf(target, "[ ");
 	for(int32_t i = 0; i < ba.length; ++i) {
-		bprintf(target, "%u ", +ba.data[i]);
+		bprintf(target, "%hhu ", (unsigned char)+ba.data[i]);
 	}
 	bprintf(target, "]");
 }
@@ -507,7 +507,7 @@ static void dump_int_array(const struct nbt_int_array ia, struct output_target *
 
 	bprintf(target, "[ ");
 	for(int32_t i = 0; i < ia.length; ++i) {
-		bprintf(target, "%u ", +ia.data[i]);
+		bprintf(target, "%u ", (unsigned int)+ia.data[i]);
 	}
 	bprintf(target, "]");
 }
@@ -518,7 +518,7 @@ static void dump_long_array(const struct nbt_long_array la, struct output_target
 
 	bprintf(target, "[ ");
 	for(int32_t i = 0; i < la.length; ++i) {
-		bprintf(target, "%u ", +la.data[i]);
+		bprintf(target, "%llu ", (unsigned long long int)+la.data[i]);
 	}
 	bprintf(target, "]");
 }
