@@ -143,6 +143,22 @@ The list type may also be changed by writing a \fBtype prefix name\fR into \fB.t
 A \fBlist\fR node may be created under either \fBcompound\fR or \fBlist\fR using \fBmkdir(2)\fR according to rules above, but please note newly created list will have an invalid list type; no node can be created under such list, and if a file system is unmounted with it, writing NBT data will fail, causing all modifications to be lost!
 Any newly created list must be initiailized with a supported list type, by writing the type prefix name to its \fB.type\fR pseude file.
 
+.SH MOVING (RENAMING) NODES
+Any node can be moved from a \fBcompound\fR or \fBlist\fR, to same or another \fBcompound\fR or \fBlist\fR, by using \fBrename(2)\fR.
+.SS Moving into Compound
+If the new name is specified with a \fBtype prefix\fR, the specified type prefix name must match the type of the node being moved.
+.PP
+If another node in target \fBcompound\fR with the new name already exists, it will be overwritten if:
+.RS
+both node is considered as a regular file by the file system, or
+.sp
+both node is considered as a directory by the file system, and the node being overwritten is an empty \fBcompound\fR or \fBlist\fR, or a \fBint32array\fR or \fBint64array\fR.
+.RE
+.SS Moving into List
+The node being moved must have a type that fit the list type.
+.PP
+The new name must be an index number. The index number must be point to either the tail of the \fBlist\fR, or an existing node in the \fBlist\fR; if it is pointing to an existing node and the node isn't a non-empty \fBcompound\fR or \fBlist\fR, the node will be overwritten.
+
 .SH CAVEATS
 .PP
 Data is commited to underlying \fI<nbt-file>\fR only upon unmounting; if anything went wrong during this process, the error message will be sent to \fBsyslog(3)\fR, and the file system will be unmounted without saving some or all data.

@@ -24,6 +24,8 @@
 #include <ctype.h>
 #include <assert.h>
 
+#define IS_LIST_EMPTY(LIST) (&(LIST)->entry == (LIST)->entry.flink)
+// NBT_IS_DIRECTORY is not used for region root node
 #define NBT_IS_DIRECTORY(NODE) ((NODE)->type == NORMAL_NODE && ((NODE)->node->type == TAG_COMPOUND || (NODE)->node->type == TAG_LIST || (NODE)->node->type == TAG_INT_ARRAY || (NODE)->node->type == TAG_LONG_ARRAY))
 #define SET_MODIFIED(NODE) do { if((NODE)->chunk) (NODE)->chunk->is_modified = 1; else is_modified = 1; } while(0)
 
@@ -617,9 +619,7 @@ static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *
 			}
 			return -EISDIR;
 		case LIST_TYPE_NODE:
-			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
-				return -ENOTEMPTY;
-			}
+			if(!IS_LIST_EMPTY(node->node->payload.tag_list)) return -ENOTEMPTY;
 			// Silently ignore
 			return 0;
 		case ARRAY_ELEMENT_NODE:
@@ -754,27 +754,41 @@ static int nbt_mkdir(const char *path, mode_t mode) {
 	return 0;
 }
 
-static int nbt_remove_node(const char *path, int dir_only) {
-	int ne;
-	struct wrapped_nbt_node *parent_node;
+// Return negative errno
+static int get_parent_node(const char *path, struct wrapped_nbt_node **parent, const char **child_name) {
 	if(*path == '/') path++;
-	const char *p = strrchr(path, '/');
-	if(p) {
-		size_t node_path_len = ++p - path;
+	*child_name = strrchr(path, '/');
+	if(*child_name) {
+		size_t node_path_len = ++(*child_name) - path;
 		char node_path[node_path_len + 1];
 		memcpy(node_path, path, node_path_len);
 		node_path[node_path_len] = 0;
-		parent_node = get_node(&root_node, node_path);
-		if(!parent_node) return -ENOENT;
-	} else if(is_region) {
-		// TODO
-		return -EPERM;
+		*parent = get_node(&root_node, node_path);
+		if(!*parent) return -ENOENT;
+		if(!NBT_IS_DIRECTORY(*parent)) {
+			if(*parent != &root_node) free(*parent);
+			return -ENOTDIR;
+		}
 	} else {
-		parent_node = &root_node;
-		p = path;
+		*parent = &root_node;
+		*child_name = path;
 	}
-	if(!NBT_IS_DIRECTORY(parent_node)) {
-		ne = -ENOTDIR;
+	return 0;
+}
+
+static int nbt_remove_node(const char *path, int dir_only) {
+	struct wrapped_nbt_node *parent_node;
+	const char *name;
+	int ne = get_parent_node(path, &parent_node, &name);
+	if(ne) return ne;
+	if(!*name) {
+		// Attempt to remove root node
+		ne = -EINVAL;
+		goto cleanup;
+	}
+	if(parent_node->type == REGION_ROOT_NODE) {
+		// TODO
+		ne = -EPERM;
 		goto cleanup;
 	}
 	if(read_only) {
@@ -782,7 +796,7 @@ static int nbt_remove_node(const char *path, int dir_only) {
 		goto cleanup;
 	}
 	errno = ENOENT;
-	struct wrapped_nbt_node *node = get_child_node_by_name(parent_node, p);
+	struct wrapped_nbt_node *node = get_child_node_by_name(parent_node, name);
 	if(!node) {
 		ne = -errno;
 		goto cleanup;
@@ -847,14 +861,14 @@ static int nbt_remove_node(const char *path, int dir_only) {
 	}
 	if(dir_only) switch(node->node->type) {
 		case TAG_LIST:
-			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
+			if(!IS_LIST_EMPTY(node->node->payload.tag_list)) {
 				free(node);
 				ne = -ENOTEMPTY;
 				goto cleanup;
 			}
 			break;
 		case TAG_COMPOUND:
-			if(&node->node->payload.tag_compound->entry != node->node->payload.tag_compound->entry.flink) {
+			if(!IS_LIST_EMPTY(node->node->payload.tag_compound)) {
 				free(node);
 				ne = -ENOTEMPTY;
 				goto cleanup;
@@ -866,6 +880,7 @@ static int nbt_remove_node(const char *path, int dir_only) {
 			goto cleanup;
 	}
 	list_del(node->pos.head);
+	free(list_entry(node->pos.head, struct nbt_list, entry));
 	nbt_free(node->node);
 	SET_MODIFIED(node);
 	free(node);
@@ -1070,9 +1085,7 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 			return -EISDIR;
 		case LIST_TYPE_NODE:
 			if(offset) return -EINVAL;
-			if(&node->node->payload.tag_list->entry != node->node->payload.tag_list->entry.flink) {
-				return -ENOTEMPTY;
-			}
+			if(!IS_LIST_EMPTY(node->node->payload.tag_list)) return -ENOTEMPTY;
 			size_t copy_len = buf[size - 1] == '\n' ? size - 1 : size;
 			nbt_type type = get_nbt_type_by_name_prefix(buf, copy_len);
 			if(type == TAG_INVALID) return -EINVAL;
@@ -1177,6 +1190,213 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 	}
 	SET_MODIFIED(node);
 	return size;
+}
+
+// Return negative errno
+static int move_node(struct nbt_node *node, struct list_head *list_head, struct nbt_node *target_parent_node) {
+	struct list_head *parent_list_head;
+	switch(target_parent_node->type) {
+		case TAG_LIST:
+			parent_list_head = &target_parent_node->payload.tag_list->entry;
+			break;
+		case TAG_COMPOUND:
+			parent_list_head = &target_parent_node->payload.tag_compound->entry;
+			break;
+		default:
+			return -EIO;
+	}
+	struct nbt_list *new_list = malloc(sizeof(struct nbt_list));
+	if(!new_list) return -ENOMEM;
+	new_list->data = node;
+	list_add_tail(&new_list->entry, parent_list_head);
+	list_del(list_head);
+	free(list_entry(list_head, struct nbt_list, entry));
+	return 0;
+}
+
+static int nbt_rename(const char *old_path, const char *new_path) {
+	struct wrapped_nbt_node *old_parent_node, *new_parent_node;
+	const char *old_name, *new_name;
+	struct wrapped_nbt_node *node = NULL, *existing_node_at_new_path = NULL;
+	char *duplicated_new_name = NULL;
+	int ne = get_parent_node(old_path, &old_parent_node, &old_name);
+	if(ne) return ne;
+	if(old_parent_node->type != NORMAL_NODE) return -EPERM;
+	if(old_parent_node->node->type != TAG_LIST && old_parent_node->node->type != TAG_COMPOUND) {
+		return -EPERM;
+	}
+	if(!*old_name) {
+		// Attempt to rename root node
+		//if(old_parent_node != &root_node) free(old_parent_node);
+		assert(old_parent_node == &root_node);
+		return -EINVAL;
+	}
+	ne = get_parent_node(new_path, &new_parent_node, &new_name);
+	if(ne) {
+		if(old_parent_node != &root_node) free(old_parent_node);
+		return ne;
+	}
+	if(!*new_name) {
+		assert(new_parent_node == &root_node);
+		ne = -EINVAL;
+		goto cleanup;
+	}
+	if(new_parent_node->type != NORMAL_NODE) {
+		ne = -EPERM;
+		goto cleanup;
+	}
+	if(new_parent_node->node->type != TAG_LIST && new_parent_node->node->type != TAG_COMPOUND) {
+		ne = -EPERM;
+		goto cleanup;
+	}
+	if(read_only) {
+		ne = -EROFS;
+		goto cleanup;
+	}
+	node = get_child_node_by_name(old_parent_node, old_name);
+	if(!node) {
+		ne = -errno;
+		goto cleanup;
+	}
+	if(node->type != NORMAL_NODE) {
+		ne = -EPERM;
+		goto cleanup;
+	}
+#if 0
+	const char *colon = strchr(old_name, ':');
+	if(colon) old_name = colon + 1;
+#else
+	old_name = node->node->name;
+#endif
+	const char *colon = strchr(new_name, ':');
+	if(colon) {
+		if(new_parent_node->node->type != TAG_COMPOUND) {
+			ne = -ENOENT;
+			goto cleanup;
+		}
+		nbt_type type = get_nbt_type_by_name_prefix(new_name, colon - new_name);
+		if(type == TAG_INVALID) {
+			ne = -ENOENT;
+			goto cleanup;
+		}
+		if(node->node->type != type) {
+			ne = -EINVAL;
+			goto cleanup;
+		}
+		new_name = colon + 1;
+	}
+	if(new_parent_node->node->type == TAG_LIST) {
+		char *end_p;
+		unsigned long int i = strtoul(new_name, &end_p, 0);
+		if(*end_p) {
+			ne = -EINVAL;
+			goto cleanup;
+		}
+		if(node->node->type != new_parent_node->node->payload.tag_list->data->type) {
+			ne = -EINVAL;
+			goto cleanup;
+		}
+		struct list_head *pos;
+		unsigned long int j = 0;
+		list_for_each(pos, &new_parent_node->node->payload.tag_list->entry) {
+			if(j++ != i) continue;
+			struct nbt_list *list = list_entry(pos, struct nbt_list, entry);
+			struct nbt_node *entry = list->data;
+			switch(entry->type) {
+				case TAG_LIST:
+					if(!IS_LIST_EMPTY(entry->payload.tag_list)) {
+						ne = -ENOTEMPTY;
+						goto cleanup;
+					}
+					break;
+				case TAG_COMPOUND:
+					if(!IS_LIST_EMPTY(entry->payload.tag_compound)) {
+						ne = -ENOTEMPTY;
+						goto cleanup;
+					}
+					break;
+			}
+			free(entry->payload.tag_compound);
+			free(entry);
+			list->data = node->node;
+			list_del(node->pos.head);
+			free(list_entry(node->pos.head, struct nbt_list, entry));
+			free(node->node->name);
+			node->node->name = NULL;
+			SET_MODIFIED(old_parent_node);
+			SET_MODIFIED(new_parent_node);
+			ne = 0;
+			goto cleanup;
+		}
+		if(j < i) {
+			ne = -EINVAL;
+			goto cleanup;
+		}
+	} else if(!old_name || strcmp(old_name, new_name)) {
+		duplicated_new_name = strdup(new_name);
+		if(!duplicated_new_name) {
+			ne = -ENOMEM;
+			goto cleanup;
+		}
+	}
+	existing_node_at_new_path = get_child_node_by_name(new_parent_node, new_name);
+	if(existing_node_at_new_path) {
+		if(existing_node_at_new_path->type != NORMAL_NODE) {
+			ne = -EPERM;
+			goto cleanup;
+		}
+		switch(NBT_IS_DIRECTORY(node) - NBT_IS_DIRECTORY(existing_node_at_new_path)) {
+			case 0:
+				break;
+			case -1:
+				ne = -EISDIR;
+				goto cleanup;
+			case 1:
+				ne = -ENOTDIR;
+				goto cleanup;
+			default:
+				ne = -EIO;
+				goto cleanup;
+		}
+		switch(existing_node_at_new_path->node->type) {
+			case TAG_LIST:
+				if(!IS_LIST_EMPTY(existing_node_at_new_path->node->payload.tag_list)) {
+					ne = -ENOTEMPTY;
+					goto cleanup;
+				}
+				break;
+			case TAG_COMPOUND:
+				if(!IS_LIST_EMPTY(existing_node_at_new_path->node->payload.tag_compound)) {
+					ne = -ENOTEMPTY;
+					goto cleanup;
+				}
+				break;
+		}
+	}
+	if(old_parent_node != new_parent_node) {
+		ne = move_node(node->node, node->pos.head, new_parent_node->node);
+		if(ne) goto cleanup;
+	}
+	if(duplicated_new_name) {
+		free(node->node->name);
+		node->node->name = duplicated_new_name;
+		duplicated_new_name = NULL;
+	}
+	if(existing_node_at_new_path) {
+		list_del(existing_node_at_new_path->pos.head);
+		free(list_entry(existing_node_at_new_path->pos.head, struct nbt_list, entry));
+		nbt_free(existing_node_at_new_path->node);
+	}
+	SET_MODIFIED(old_parent_node);
+	SET_MODIFIED(new_parent_node);
+	ne = 0;
+cleanup:
+	if(old_parent_node != &root_node) free(old_parent_node);
+	if(new_parent_node != &root_node) free(new_parent_node);
+	free(node);
+	free(existing_node_at_new_path);
+	free(duplicated_new_name);
+	return ne;
 }
 
 static void handle_file_error(const char *func, int *fd) {
@@ -1387,6 +1607,7 @@ static struct fuse_operations operations = {
 	.unlink		= nbt_unlink,
 	.mkdir		= nbt_mkdir,
 	.rmdir		= nbt_rmdir,
+	.rename		= nbt_rename,
 	.destroy	= nbt_destroy
 };
 
