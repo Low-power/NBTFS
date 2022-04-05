@@ -247,6 +247,11 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 	return NULL;
 }
 
+static void free_wrapped_node(struct wrapped_nbt_node *node) {
+	if(node && node->type == LIST_TYPE_NODE) free(node->node);
+	free(node);
+}
+
 static struct wrapped_nbt_node *get_node(struct wrapped_nbt_node *parent, const char *path) {
 	if(*path == '/') path++;
 	if(!*path) return parent;
@@ -258,7 +263,7 @@ static struct wrapped_nbt_node *get_node(struct wrapped_nbt_node *parent, const 
 	struct wrapped_nbt_node *node = get_child_node_by_name(parent, name);
 	if(!node) return NULL;
 	struct wrapped_nbt_node *r = get_node(node, path + name_len);
-	if(node != r) free(node);
+	if(node != r) free_wrapped_node(node);
 	return r;
 }
 
@@ -573,8 +578,7 @@ static size_t get_size(struct wrapped_nbt_node *node) {
 static int nbt_release(const char *path, struct fuse_file_info *fi) {
 	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
 	if(node == &root_node) return 0;
-	if(node->type == LIST_TYPE_NODE) free(node->node);
-	free(node);
+	free_wrapped_node(node);
 	return 0;
 }
 
@@ -766,7 +770,7 @@ static int get_parent_node(const char *path, struct wrapped_nbt_node **parent, c
 		*parent = get_node(&root_node, node_path);
 		if(!*parent) return -ENOENT;
 		if(!NBT_IS_DIRECTORY(*parent)) {
-			if(*parent != &root_node) free(*parent);
+			if(*parent != &root_node) free_wrapped_node(*parent);
 			return -ENOTDIR;
 		}
 	} else {
@@ -777,6 +781,7 @@ static int get_parent_node(const char *path, struct wrapped_nbt_node **parent, c
 }
 
 static int nbt_remove_node(const char *path, int dir_only) {
+	struct wrapped_nbt_node *node = NULL;
 	struct wrapped_nbt_node *parent_node;
 	const char *name;
 	int ne = get_parent_node(path, &parent_node, &name);
@@ -796,12 +801,13 @@ static int nbt_remove_node(const char *path, int dir_only) {
 		goto cleanup;
 	}
 	errno = ENOENT;
-	struct wrapped_nbt_node *node = get_child_node_by_name(parent_node, name);
+	node = get_child_node_by_name(parent_node, name);
 	if(!node) {
 		ne = -errno;
 		goto cleanup;
 	}
 	if(node == &root_node) {
+		node = NULL;
 		ne = -EINVAL;
 		goto cleanup;
 	}
@@ -814,12 +820,10 @@ static int nbt_remove_node(const char *path, int dir_only) {
 			break;
 		case LIST_TYPE_NODE:
 		missing_link_head:
-			free(node);
 			ne = -EPERM;
 			goto cleanup;
 		case ARRAY_ELEMENT_NODE:
 			if(dir_only) {
-				free(node);
 				ne = -ENOTDIR;
 				goto cleanup;
 			}
@@ -838,44 +842,37 @@ static int nbt_remove_node(const char *path, int dir_only) {
 					goto eio;
 			}
 			if(node->pos.index + 1 < *len) {
-				free(node);
 				ne = -EBUSY;
 				goto cleanup;
 			}
 			if(node->pos.index >= *len) {
-				free(node);
 				ne = -ENOENT;
 				goto cleanup;
 			}
 			*p = realloc(*p, node->pos.index * element_size);
 			(*len)--;
 			SET_MODIFIED(node);
-			free(node);
 			ne = 0;
 			goto cleanup;
 		default:
 		eio:
-			free(node);
 			ne = -EIO;
 			goto cleanup;
 	}
 	if(dir_only) switch(node->node->type) {
 		case TAG_LIST:
 			if(!IS_LIST_EMPTY(node->node->payload.tag_list)) {
-				free(node);
 				ne = -ENOTEMPTY;
 				goto cleanup;
 			}
 			break;
 		case TAG_COMPOUND:
 			if(!IS_LIST_EMPTY(node->node->payload.tag_compound)) {
-				free(node);
 				ne = -ENOTEMPTY;
 				goto cleanup;
 			}
 			break;
 		default:
-			free(node);
 			ne = -ENOTDIR;
 			goto cleanup;
 	}
@@ -886,7 +883,8 @@ static int nbt_remove_node(const char *path, int dir_only) {
 	free(node);
 	ne = 0;
 cleanup:
-	if(parent_node != &root_node) free(parent_node);
+	free_wrapped_node(node);
+	if(parent_node != &root_node) free_wrapped_node(parent_node);
 	return ne;
 }
 
@@ -1393,8 +1391,8 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 cleanup:
 	if(old_parent_node != &root_node) free(old_parent_node);
 	if(new_parent_node != &root_node) free(new_parent_node);
-	free(node);
-	free(existing_node_at_new_path);
+	free_wrapped_node(node);
+	free_wrapped_node(existing_node_at_new_path);
 	free(duplicated_new_name);
 	return ne;
 }
