@@ -17,7 +17,11 @@ SBINDIR ?= $(PREFIX)/sbin
 DATADIR ?= $(PREFIX)/share
 MANDIR ?= $(DATADIR)/man
 
+PIC_OPTION ?= -fPIC
+SONAME_OPTION ?= --soname
+
 LIBNBT_OBJECTS := buffer.o nbt_loading.o nbt_parsing.o nbt_treeops.o nbt_util.o
+SHARED_LIBNBT_OBJECTS := buffer.pic.o nbt_loading.pic.o nbt_parsing.pic.o nbt_treeops.pic.o nbt_util.pic.o
 
 all:	nbtdump check regiondump mkfs.nbt mount.nbt
 
@@ -44,14 +48,30 @@ mount.nbt:	mount.nbt.c version.h syncwrite.o libnbt.a
 .c:	version.h libnbt.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -L . -l nbt -l z $(LIBS)
 
-test: check
-	cd testdata && for f in *.nbt; do valgrind ../check "$$f" || exit; done
-
 libnbt.a:	$(LIBNBT_OBJECTS)
 	$(AR) -rcs $@ $(LIBNBT_OBJECTS)
 
+libnbt.so.1:	$(SHARED_LIBNBT_OBJECTS)
+	$(CC) $(LDFLAGS) --shared -Wl,$(SONAME_OPTION),$@ $(SHARED_LIBNBT_OBJECTS) -o $@ -l z $(LIBS)
+
+libnbt.so:	libnbt.so.1
+	ln -sf libnbt.so.1 $@
+
+.SUFFIXES:	.pic.o
+
+# For GNU Make
+%.pic.o:	%.c
+	$(CC) $(CFLAGS) $(PIC_OPTION) -c $< -o $@
+
+# For BSD make
+.c.pic.o:
+	$(CC) $(CFLAGS) $(PIC_OPTION) -c $< -o $@
+
+test: check
+	cd testdata && for f in *.nbt; do valgrind ../check "$$f" || exit; done
+
 clean:
-	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a syncwrite.o $(LIBNBT_OBJECTS)
+	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a libnbt.so.1 libnbt.so syncwrite.o $(LIBNBT_OBJECTS) $(SHARED_LIBNBT_OBJECTS)
 
 install:	all
 	for d in "$(DESTDIR)$(BINDIR)" \
