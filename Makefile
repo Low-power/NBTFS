@@ -16,6 +16,8 @@ BINDIR ?= $(PREFIX)/bin
 SBINDIR ?= $(PREFIX)/sbin
 DATADIR ?= $(PREFIX)/share
 MANDIR ?= $(DATADIR)/man
+INCLUDEDIR ?= $(PREFIX)/include
+LIBDIR ?= $(PREFIX)/lib
 
 PIC_OPTION ?= -fPIC
 SONAME_OPTION ?= --soname
@@ -73,7 +75,7 @@ test: check
 clean:
 	rm -f nbtdump check regiondump mount.nbt mkfs.nbt libnbt.a libnbt.so.1 libnbt.so syncwrite.o $(LIBNBT_OBJECTS) $(SHARED_LIBNBT_OBJECTS)
 
-install:	all
+install-commands:	all
 	for d in "$(DESTDIR)$(BINDIR)" \
 		"$(DESTDIR)$(SBINDIR)" \
 		"$(DESTDIR)$(DATADIR)" \
@@ -89,4 +91,21 @@ install:	all
 	$(INSTALL) -m 644 mkfs.nbt.8 "$(DESTDIR)$(MANDIR)/man8/"
 	$(INSTALL) -m 644 mount.nbt.8 "$(DESTDIR)$(MANDIR)/man8/"
 
-.PHONY:	clean install
+install-headers:	buffer.h list.h nbt.h version.h
+	[ -d "$(DESTDIR)$(INCLUDEDIR)/nbt" ] || mkdir -p "$(DESTDIR)$(INCLUDEDIR)/nbt"
+	for f in buffer.h list.h nbt.h version.h; do $(INSTALL) -m 644 $$f "$(DESTDIR)$(INCLUDEDIR)/nbt/"; done
+
+install-static-library:	libnbt.a
+	[ -d "$(DESTDIR)$(LIBDIR)" ] || mkdir -p "$(DESTDIR)$(LIBDIR)"
+	$(INSTALL) -m 644 libnbt.a "$(DESTDIR)$(LIBDIR)/"
+
+install-shared-library:	libnbt.so.1
+	[ -d "$(DESTDIR)$(LIBDIR)" ] || mkdir -p "$(DESTDIR)$(LIBDIR)"
+	$(INSTALL) -m 755 libnbt.so.1 "$(DESTDIR)$(LIBDIR)/"
+
+install-dev:	install-headers install-static-library install-shared-library
+	ln -sf libnbt.so.1 "$(DESTDIR)$(LIBDIR)/libnbt.so"
+
+install:	install-commands
+
+.PHONY:	clean install-commands install-headers install-static-library install-shared-library install-dev install
