@@ -33,9 +33,7 @@ version.h:	.git/logs/HEAD
 	export TZ=UTC; \
 	if [ -f .git/HEAD ]; then \
 		printf "#define NBTFSUTILS_VERSION \"%s\"\\n" "`git show --format=%cd_%h --date short --quiet | sed -e 1!d -e 's/-//g' -e 's/_/-/'`" > $@; \
-	elif [ -f $@ ]; then \
-		touch $@; \
-	else \
+	elif [ ! -f $@ ]; then \
 		printf "#define NBTFSUTILS_VERSION \"local-snapshot-%s\"\\n" "`date +%Y%m%d`" > $@; \
 	fi
 
