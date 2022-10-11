@@ -103,9 +103,9 @@ compound:Data/RandomSeed
 .RE
 Turning on mount option \fBtypeprefix\fR will having this \fBtype prefix\fR be automatically prepended to node names, when listing a \fBcompound\fR using \fBreaddir(3)\fR; this could be useful to preserve the type information when copying a \fBcompound\fR node recursively (such as using \fBtar(1)\fR), so it is possible for the copied nodes be restored into another NBT later.
 .SS Referencing Nodes Under List
-Nodes under a \fBlist\fR are accessed using index numbers starting with 0; they will also have same type, a pseudo file \fB.type\fR is available under any \fBlist\fR to indicate node type the list contains.
+Nodes under a \fBlist\fR are accessed using index numbers starting with 0. They will also have same type; a pseudo file \fB.type\fR is available under any \fBlist\fR to indicate node type the list contains.
 .SS Accessing Individual Node
-Any node which the file type is regular file can be read and written directly using \fBread(2)\fR and \fBwrite(2)\fR; they can also be \fBtruncate(2)\fRed to empty, but number typed (
+Any node which the file type is regular file can be read and written directly using \fBread(2)\fR and \fBwrite(2)\fR; they can also be \fBtruncate(2)\fRd to empty, but number typed (
 .B int8
 ,
 .B int16
@@ -130,7 +130,7 @@ On supported platforms, the array nodes may also be read directly (using \fBread
 
 .SH ADDING AND REMOVING NODES
 .SS Under Compound
-Nodes under a \fBcompound\fR can be removed by using \fBunlink(2)\fR or \fBrmdir(2)\fR, according to their represented file type; usual file system restrictions on directory apply, meaning they can not be removed unless empty.
+Nodes under a \fBcompound\fR can be removed by using \fBunlink(2)\fR or \fBrmdir(2)\fR, according to their represented file type; usual file system restrictions on directory apply, meaning nodes that being represented as directories can not be removed unless empty.
 .PP
 Unlike referencing an existing node, creating a new node under a \fBcompound\fR must use a type-prefixed name.
 .SS Under List
