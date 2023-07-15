@@ -464,7 +464,7 @@ parse_error:
     if(errno == NBT_OK)
         errno = NBT_ERR;
 
-    free(node);
+    nbt_free(node);
     return NULL;
 }
 
