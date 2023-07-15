@@ -1,4 +1,4 @@
-/*	Copyright 2015-2022 Rivoreo
+/*	Copyright 2015-2023 Rivoreo
 
 	This Source Code Form is subject to the terms of the Mozilla Public
 	License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1696,7 +1696,7 @@ int main(int argc, char **argv) {
 					return 0;
 				case 'V':
 					puts("mount.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
-					puts("Copyright 2015-2022 Rivoreo");
+					puts("Copyright 2015-2023 Rivoreo");
 					puts("This Executable Form of the program can be redistributed under the terms of\n"
 						"the Mozilla Public License, version 2.0.");
 					puts("The program is provided without any warranty. See Mozilla Public License,\n"
@@ -1721,6 +1721,16 @@ not_an_option:
 	if(!mount_from || !mount_point) {
 		print_usage(argv[0]);
 		return -1;
+	}
+	if(read_only) {
+		fuse_argc += 2;
+		fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
+		if(!fuse_argv) {
+			perror("realloc");
+			return 1;
+		}
+		fuse_argv[fuse_argc - 3] = "-o";
+		fuse_argv[fuse_argc - 2] = "ro";
 	}
 	int logopt = LOG_PID;
 #ifdef LOG_PERROR
