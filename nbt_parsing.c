@@ -166,24 +166,23 @@ parse_error:
 
 static nbt_node* parse_named_tag(const char** memory, size_t* length)
 {
-  char* name = NULL;
+	uint8_t type;
+	READ_GENERIC(&type, sizeof type, memscan, goto parse_error);
 
-  uint8_t type;
-  READ_GENERIC(&type, sizeof type, memscan, goto parse_error);
+	char *name = read_string(memory, length);
+	if(!name) goto parse_error;
 
-  name = read_string(memory, length);
+	nbt_node* ret = parse_unnamed_tag((nbt_type)type, name, memory, length);
+	if(ret == NULL) {
+		free(name);
+		goto parse_error;
+	}
 
-  nbt_node* ret = parse_unnamed_tag((nbt_type)type, name, memory, length);
-  if(ret == NULL) goto parse_error;
-
-  return ret;
+	return ret;
 
 parse_error:
-  if(errno == NBT_OK)
-    errno = NBT_ERR;
-
-  free(name);
-  return NULL;
+	if(errno == NBT_OK) errno = NBT_ERR;
+	return NULL;
 }
 
 static struct nbt_byte_array read_byte_array(const char** memory, size_t* length)
