@@ -33,19 +33,18 @@ typedef enum {
 
 typedef enum {
     TAG_INVALID    = 0,  /* tag_end, but we don't use it in the in-memory representation. */
-    TAG_BYTE       = 1,  /* char, 8 bits, signed */
-    TAG_SHORT      = 2,  /* short, 16 bits, signed */
-    TAG_INT        = 3,  /* long, 32 bits, signed */
-    TAG_LONG       = 4,  /* long long, 64 bits, signed */
-    TAG_FLOAT      = 5,  /* float, 32 bits, signed */
-    TAG_DOUBLE     = 6,  /* double, 64 bits, signed */
-    TAG_BYTE_ARRAY = 7,  /* char *, 8 bits, unsigned, TAG_INT length */
-    TAG_STRING     = 8,  /* char *, 8 bits, signed, TAG_SHORT length */
-    TAG_LIST       = 9,  /* X *, X bits, TAG_INT length, no names inside */
-    TAG_COMPOUND   = 10, /* nbt_tag * */
-    TAG_INT_ARRAY  = 11, /* long *, 32 bits, signed, TAG_INT length */
-    TAG_LONG_ARRAY = 12  /* long long *, 64 bits, signed, TAG_INT length */
-
+    TAG_BYTE       = 1,  /* int8_t */
+    TAG_SHORT      = 2,  /* int16_t */
+    TAG_INT        = 3,  /* int32_t */
+    TAG_LONG       = 4,  /* int64_t */
+    TAG_FLOAT      = 5,  /* float, 32 bits */
+    TAG_DOUBLE     = 6,  /* double, 64 bits */
+    TAG_BYTE_ARRAY = 7,  /* uint8_t [], TAG_INT length */
+    TAG_STRING     = 8,  /* char [], TAG_SHORT length */
+    TAG_LIST       = 9,  /* X [], TAG_INT length, no names inside */
+    TAG_COMPOUND   = 10, /* nbt_tag [] */
+    TAG_INT_ARRAY  = 11, /* int32_t [], TAG_INT length */
+    TAG_LONG_ARRAY = 12  /* int64_t [], TAG_INT length */
 } nbt_type;
 
 typedef enum {
