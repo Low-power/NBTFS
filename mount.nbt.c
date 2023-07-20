@@ -909,6 +909,7 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			}
 			return -EISDIR;
 		case LIST_TYPE_NODE:
+			if(offset >= INT8_MAX) return 0;
 			goto copy_list_type;
 		case ARRAY_ELEMENT_NODE:
 			switch(node->node->type) {
@@ -948,6 +949,7 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			length = sprintf(buffer, "%f\n", node->node->payload.tag_double);
 			break;
 		case TAG_STRING:
+			if(offset >= INT16_MAX) return 0;
 			p = node->node->payload.tag_string;
 			if(!p) return 0;
 			goto copy_string;
@@ -957,7 +959,7 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			if(!p) p = "invalid";
 		copy_string:
 			length = strlen(p);
-			if(length < offset) return 0;
+			if(length < (size_t)offset) return 0;
 			length -= offset;
 			if(length > sizeof buffer) length = sizeof buffer;
 			memcpy(buffer, p + offset, length);
@@ -981,7 +983,8 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			p = (const char *)node->node->payload.tag_long_array.data;
 			length = node->node->payload.tag_long_array.length * 8;
 		copy_array:
-			if(length <= offset) return 0;
+			if(offset >= INT32_MAX) return 0;
+			if(length <= (size_t)offset) return 0;
 			length -= offset;
 			if(length > sizeof buffer) length = sizeof buffer;
 			memcpy(buffer, p + offset, length);
