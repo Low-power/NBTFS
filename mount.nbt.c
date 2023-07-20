@@ -1457,8 +1457,20 @@ static void nbt_destroy(void *a) {
 					} else if(lseek(region_fd, 1, SEEK_CUR) < 0) {
 						handle_file_error("lseek", &region_fd);
 					}
-					if(region_fd != -1 && sync_write(region_fd, buffer.data, buffer.len) < 0) {
-						handle_file_error("write", &region_fd);
+					if(region_fd != -1) {
+						time_t t = time(NULL);
+						if(sync_write(region_fd, buffer.data, buffer.len) < 0) {
+							handle_file_error("write", &region_fd);
+						} else if(t <= UINT32_MAX) {
+							if(lseek(region_fd, 4096 + i * 4, SEEK_SET) < 0) {
+								handle_file_error("lseek", &region_fd);
+							} else {
+								uint32_t v = htonl(t);
+								if(sync_write(region_fd, &v, 4) < 0) {
+									handle_file_error("write", &region_fd);
+								}
+							}
+						}
 					}
 				} else if(sync_write(region_fd, info->map_begin, info->length) < 0) {
 					handle_file_error("write", &region_fd);
