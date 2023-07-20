@@ -1420,16 +1420,17 @@ static void nbt_destroy(void *a) {
 			struct chunk_info *info = region_chunks + i;
 			if(!info->map_begin) continue;
 			if(!read_only && region_fd != -1 && (info->is_modified || need_full_write)) {
+				int chunk_compression;
 				struct buffer buffer;
 				if(lseek(region_fd, info->file_offset, SEEK_SET) < 0) {
 					handle_file_error("lseek", &region_fd);
 				}
 				if(info->is_modified) {
 					syslog(LOG_DEBUG, "Chunk %u has been modified", i);
-					buffer = nbt_dump_compressed(info->nbt_node,
-						compression == -1 ?
-							(*(uint8_t *)info->map_begin == 1 ? STRAT_GZIP : STRAT_INFLATE) :
-							compression);
+					chunk_compression = compression == -1 ?
+						(*(uint8_t *)info->map_begin == 1 ? STRAT_GZIP : STRAT_INFLATE) :
+						compression;
+					buffer = nbt_dump_compressed(info->nbt_node, chunk_compression);
 					if(!buffer.data) {
 						syslog(LOG_ERR, "Failed to compress chunk %u, %s",
 							i, nbt_error_to_string(errno));
@@ -1450,7 +1451,7 @@ static void nbt_destroy(void *a) {
 					handle_file_error("write", &region_fd);
 				} else if(buffer.data) {
 					if(compression != -1 || need_full_write) {
-						uint8_t v = compression == STRAT_GZIP ? 1 : 2;
+						uint8_t v = chunk_compression == STRAT_GZIP ? 1 : 2;
 						if(sync_write(region_fd, &v, 1) < 0) {
 							handle_file_error("write", &region_fd);
 						}
