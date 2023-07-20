@@ -407,55 +407,63 @@ static nbt_node* parse_unnamed_tag(nbt_type type, char* name, const char** memor
     node->type = type;
     node->name = name;
 
-#define COPY_INTO_PAYLOAD(payload_name) \
-    READ_GENERIC(&node->payload.payload_name, sizeof node->payload.payload_name, swapped_memscan, goto parse_error);
+#define COPY_PRIMITIVE(TYPE) \
+    READ_GENERIC(&node->payload.tag_##TYPE, sizeof node->payload.tag_##TYPE, swapped_memscan, goto parse_error)
+#define COPY_ARRAY(TYPE) do { \
+		node->payload.tag_##TYPE##_array = read_##TYPE##_array(memory, length); \
+		if(!node->payload.tag_##TYPE##_array.data) goto parse_error; \
+	} while(0)
+#define COPY_OTHER(TYPE) do { \
+		node->payload.tag_##TYPE = read_##TYPE(memory, length); \
+		if(!node->payload.tag_##TYPE) goto parse_error; \
+	} while(0)
 
     switch(type)
     {
     case TAG_BYTE:
-        COPY_INTO_PAYLOAD(tag_byte);
+        COPY_PRIMITIVE(byte);
         break;
     case TAG_SHORT:
-        COPY_INTO_PAYLOAD(tag_short);
+        COPY_PRIMITIVE(short);
         break;
     case TAG_INT:
-        COPY_INTO_PAYLOAD(tag_int);
+        COPY_PRIMITIVE(int);
         break;
     case TAG_LONG:
-        COPY_INTO_PAYLOAD(tag_long);
+        COPY_PRIMITIVE(long);
         break;
     case TAG_FLOAT:
-        COPY_INTO_PAYLOAD(tag_float);
+        COPY_PRIMITIVE(float);
         break;
     case TAG_DOUBLE:
-        COPY_INTO_PAYLOAD(tag_double);
+        COPY_PRIMITIVE(double);
         break;
     case TAG_BYTE_ARRAY:
-        node->payload.tag_byte_array = read_byte_array(memory, length);
+        COPY_ARRAY(byte);
         break;
     case TAG_INT_ARRAY:
-        node->payload.tag_int_array = read_int_array(memory, length);
+        COPY_ARRAY(int);
         break;
     case TAG_LONG_ARRAY:
-        node->payload.tag_long_array = read_long_array(memory, length);
+        COPY_ARRAY(long);
         break;
     case TAG_STRING:
-        node->payload.tag_string = read_string(memory, length);
+        COPY_OTHER(string);
         break;
     case TAG_LIST:
-        node->payload.tag_list = read_list(memory, length);
+        COPY_OTHER(list);
         break;
     case TAG_COMPOUND:
-        node->payload.tag_compound = read_compound(memory, length);
+        COPY_OTHER(compound);
         break;
 
     default:
         goto parse_error; /* Unknown node or TAG_END. Either way, we shouldn't be parsing this. */
     }
 
-#undef COPY_INTO_PAYLOAD
-
-    if(errno != NBT_OK) goto parse_error;
+#undef COPY_PRIMITIVE
+#undef COPY_ARRAY
+#undef COPY_OTHER
 
     return node;
 
