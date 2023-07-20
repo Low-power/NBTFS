@@ -1424,14 +1424,18 @@ static void nbt_destroy(void *a) {
 				}
 				if(info->is_modified) {
 					syslog(LOG_DEBUG, "Chunk %u has been modified", i);
-					buffer = nbt_dump_compressed(info->nbt_node, compression);
+					buffer = nbt_dump_compressed(info->nbt_node,
+						compression == -1 ?
+							(*(uint8_t *)info->map_begin == 1 ? STRAT_GZIP : STRAT_INFLATE) :
+							compression);
 					if(!buffer.data) {
 						syslog(LOG_ERR, "Failed to compress chunk %u, %s",
 							i, nbt_error_to_string(errno));
 					}
-					if(1 + buffer.len> info->file_size) {
+					if(1 + buffer.len > info->file_size) {
 						// TODO: reallocate more space
-						syslog(LOG_ERR, "Chunk %u is too big to store, need %zu bytes but only %zu bytes available",
+						syslog(LOG_ERR,
+							"Chunk %u is too big to store, need %zu bytes but only %zu bytes available",
 							i, 1 + buffer.len, info->file_size);
 						free(buffer.data);
 						buffer.data = NULL;
@@ -1443,10 +1447,17 @@ static void nbt_destroy(void *a) {
 				if(sync_write(region_fd, &len, 4) < 0) {
 					handle_file_error("write", &region_fd);
 				} else if(buffer.data) {
-					uint8_t v = compression == STRAT_GZIP ? 1 : 2;
-					if(sync_write(region_fd, &v, 1) < 0) {
-						handle_file_error("write", &region_fd);
-					} else if(sync_write(region_fd, buffer.data, buffer.len) < 0) {
+					if(compression == -1) {
+						if(lseek(region_fd, 1, SEEK_CUR) < 0) {
+							handle_file_error("lseek", &region_fd);
+						}
+					} else {
+						uint8_t v = compression == STRAT_GZIP ? 1 : 2;
+						if(sync_write(region_fd, &v, 1) < 0) {
+							handle_file_error("write", &region_fd);
+						}
+					}
+					if(region_fd != -1 && sync_write(region_fd, buffer.data, buffer.len) < 0) {
 						handle_file_error("write", &region_fd);
 					}
 				} else if(sync_write(region_fd, info->map_begin, info->length) < 0) {
@@ -1765,7 +1776,6 @@ not_an_option:
 		root_node.pos.head = NULL;
 		root_node.chunk = NULL;
 		if(fd != region_fd) close(fd);
-		if(compression == -1) compression = STRAT_INFLATE;
 		syslog(LOG_DEBUG, "Region %s loaded successfully", mount_from);
 	} else {
 		FILE *f = fopen(mount_from, read_only || write_file_path ? "rb" : "r+b");
