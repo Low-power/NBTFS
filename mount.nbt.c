@@ -1165,12 +1165,13 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 			{
 				void **target_p = node->node->type == TAG_STRING ?
 					(void **)&node->node->payload.tag_string : (void **)&node->node->payload.tag_byte_array.data;
-				if(offset + copy_len > orig_len) {
-					void *p = realloc(*target_p, offset + copy_len + need_end_byte);
+				size_t total_len = offset + copy_len + need_end_byte;
+				if(total_len > orig_len) {
+					void *p = realloc(*target_p, total_len);
 					if(!p) return -ENOMEM;
 					*target_p = p;
 					if(node->node->type == TAG_BYTE_ARRAY) {
-						node->node->payload.tag_byte_array.length = offset + copy_len;
+						node->node->payload.tag_byte_array.length = total_len;
 					}
 				}
 				memcpy((char *)*target_p + offset, buf, copy_len);
