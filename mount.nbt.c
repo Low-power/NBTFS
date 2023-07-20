@@ -1449,15 +1449,13 @@ static void nbt_destroy(void *a) {
 				if(sync_write(region_fd, &len, 4) < 0) {
 					handle_file_error("write", &region_fd);
 				} else if(buffer.data) {
-					if(compression == -1) {
-						if(lseek(region_fd, 1, SEEK_CUR) < 0) {
-							handle_file_error("lseek", &region_fd);
-						}
-					} else {
+					if(compression != -1 || need_full_write) {
 						uint8_t v = compression == STRAT_GZIP ? 1 : 2;
 						if(sync_write(region_fd, &v, 1) < 0) {
 							handle_file_error("write", &region_fd);
 						}
+					} else if(lseek(region_fd, 1, SEEK_CUR) < 0) {
+						handle_file_error("lseek", &region_fd);
 					}
 					if(region_fd != -1 && sync_write(region_fd, buffer.data, buffer.len) < 0) {
 						handle_file_error("write", &region_fd);
