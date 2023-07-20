@@ -1,4 +1,4 @@
-/*	Copyright 2015-2022 Rivoreo
+/*	Copyright 2015-2023 Rivoreo
 
 	Permission is hereby granted, free of charge, to any person obtaining
 	a copy of this software and associated documentation files (the
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
 	unsigned int i;
 	uint8_t *byte_p = map;
 	int32_t *int_p = map;
-	puts("Chunk Offset     Last-Updated             Size Used-Space Compression");
+	puts("Chunk Offset     Last-Updated              Size Used-Space Compression");
 	for(i = 0; i < 1024; i++) {
 		size_t chunk_size = byte_p[i * 4 + 3] * 4 * 1024;
 		if(!chunk_size) continue;
@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		uint8_t compression_type = chunk[4];
-		printf("%5u 0x%08x %-23s %5zu %10d %s\n",
+		printf("%5u 0x%08x %-23s %6zu %10d %s\n",
 			i, (unsigned int)file_offset, time_buffer, chunk_size, (int)used_space,
 			compression_type_names[
 				compression_type < sizeof compression_type_names / sizeof(char *) ?
