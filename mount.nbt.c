@@ -880,7 +880,6 @@ static int nbt_remove_node(const char *path, int dir_only) {
 	free(list_entry(node->pos.head, struct nbt_list, entry));
 	nbt_free(node->node);
 	SET_MODIFIED(node);
-	free(node);
 	ne = 0;
 cleanup:
 	free_wrapped_node(node);
