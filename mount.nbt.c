@@ -715,8 +715,9 @@ static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *
 
 static int nbt_truncate(const char *path, off_t length) {
 	if(read_only) return -EROFS;
+	errno = ENOENT;
 	struct wrapped_nbt_node *node = get_node(&root_node, path);
-	if(!node) return -ENOENT;
+	if(!node) return -errno;
 	struct fuse_file_info fi = { .fh = (uint64_t)node };
 	int ne = nbt_ftruncate(path, length, &fi);
 	nbt_release(path, &fi);
@@ -727,8 +728,9 @@ static int nbt_open(const char *path, struct fuse_file_info *fi) {
 	if((fi->flags & (O_RDONLY|O_WRONLY|O_RDWR)) == O_RDONLY) {
 		if(fi->flags & O_TRUNC) return -EINVAL;
 	} else if(read_only) return -EROFS;
+	errno = ENOENT;
 	struct wrapped_nbt_node *node = get_node(&root_node, path);
-	if(!node) return -ENOENT;
+	if(!node) return -errno;
 	fi->fh = (uint64_t)node;
 	if(fi->flags & O_TRUNC) {
 		int ne = nbt_ftruncate(path, 0, fi);
@@ -767,8 +769,9 @@ static int get_parent_node(const char *path, struct wrapped_nbt_node **parent, c
 		char node_path[node_path_len + 1];
 		memcpy(node_path, path, node_path_len);
 		node_path[node_path_len] = 0;
+		errno = ENOENT;
 		*parent = get_node(&root_node, node_path);
-		if(!*parent) return -ENOENT;
+		if(!*parent) return -errno;
 		if(!NBT_IS_DIRECTORY(*parent)) {
 			if(*parent != &root_node) free_wrapped_node(*parent);
 			return -ENOTDIR;
@@ -1254,6 +1257,7 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 		ne = -EROFS;
 		goto cleanup;
 	}
+	errno = ENOENT;
 	node = get_child_node_by_name(old_parent_node, old_name);
 	if(!node) {
 		ne = -errno;
@@ -1340,6 +1344,7 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 			goto cleanup;
 		}
 	}
+	errno = 0;
 	existing_node_at_new_path = get_child_node_by_name(new_parent_node, new_name);
 	if(existing_node_at_new_path) {
 		if(existing_node_at_new_path->type != NORMAL_NODE) {
@@ -1373,6 +1378,9 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 				}
 				break;
 		}
+	} else if(errno) {
+		ne = -errno;
+		goto cleanup;
 	}
 	if(old_parent_node != new_parent_node) {
 		ne = move_node(node->node, node->pos.head, new_parent_node->node);
