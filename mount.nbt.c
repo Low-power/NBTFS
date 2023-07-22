@@ -1470,7 +1470,7 @@ static void nbt_destroy(void *a) {
 						time_t t = time(NULL);
 						if(sync_write(region_fd, buffer.data, buffer.len) < 0) {
 							handle_file_error("write", &region_fd);
-						} else if(t <= UINT32_MAX) {
+						} else if(t != (time_t)-1 && (uint64_t)t <= UINT32_MAX) {
 							if(lseek(region_fd, 4096 + i * 4, SEEK_SET) < 0) {
 								handle_file_error("lseek", &region_fd);
 							} else {
