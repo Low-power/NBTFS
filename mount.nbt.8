@@ -25,7 +25,7 @@ Ignored.
 
 .B
 .IP "-o \fI<fs-option>\fR[,\fI...\fR]"
-Pass gereric mount options, FUSE-specific options, and/or NBT-specific options, in a comma-separated list. See \fBmount(8)\fR and \fBfuse(8)\fR for gereric mount options and FUSE-specific options.
+Pass gereric mount options, FUSE-specific options, and/or NBT-specific options, in a comma-separated list. See \fBmount(8)\fR and \fBfuse(8)\fR for generic mount options and FUSE-specific options.
 .sp
 NBT-specific options are:
 .RS
@@ -93,7 +93,7 @@ TAG_Long_Array	Directory	int64array
 .SH ACCESSING NODES
 .SS Referencing Nodes Under Compound
 For nodes directly under a \fBcompound\fR, they can be accessed using their name; a \fBtype prefix\fR can also be prepended to an name to reference a node, as \fItypeprefix\fR:\fIname\fR.
-For example an \fBint64\fR node named \fBRandomSeed\fR under a \fBcompound\fR named \fBData\fR, the following 2 pathes would referencing the exactly same node:
+For example an \fBint64\fR node named \fBRandomSeed\fR under a \fBcompound\fR named \fBData\fR, the following 2 paths would referencing the exactly same node:
 .RS
 Data/int64:RandomSeed
 .br
@@ -134,12 +134,12 @@ Unlike referencing an existing node, creating a new node under a \fBcompound\fR 
 .SS Under List
 Like \fBcompound\fR, nodes under a \fBlist\fR may be removed by using either \fBunlink(2)\fR or \fBrmdir(2)\fR; if a non-tail node was removed, the index number of later nodes will be shifted backward by 1, which could be surprising when trying to remove multiple nodes.
 .PP
-New node may be added only to the tail of a \fBlist\fR, there is currently not possible to insert a node in middle of a list. Newly created node will have the type specified by the list type, indicated by the \fB.type\fR pseude file.
+New node may be added only to the tail of a \fBlist\fR, there is currently not possible to insert a node in middle of a list. Newly created node will have the type specified by the list type, indicated by the \fB.type\fR pseudo file.
 .PP
 The list type may also be changed by writing a \fBtype prefix name\fR into \fB.type\fR, but only when the list is empty.
 .SS Special Requirement For Creating List Node
 A \fBlist\fR node may be created under either \fBcompound\fR or \fBlist\fR using \fBmkdir(2)\fR according to rules above, but please note newly created list will have an invalid list type; no node can be created under such list, and if a file system is unmounted with it, writing NBT data will fail, causing all modifications to be lost!
-Any newly created list must be initiailized with a supported list type, by writing the type prefix name to its \fB.type\fR pseude file.
+Any newly created list must be initialized with a supported list type, by writing the type prefix name to its \fB.type\fR pseudo file.
 
 .SH MOVING (RENAMING) NODES
 Any node can be moved from a \fBcompound\fR or \fBlist\fR, to same or another \fBcompound\fR or \fBlist\fR, by using \fBrename(2)\fR.
@@ -159,7 +159,7 @@ The new name must be an index number. The index number must be point to either t
 
 .SH CAVEATS
 .PP
-Data is commited to underlying \fI<nbt-file>\fR only upon unmounting; if anything went wrong during this process, the error message will be sent to \fBsyslog(3)\fR, and the file system will be unmounted without saving some or all data.
+Data is committed to underlying \fI<nbt-file>\fR only upon unmounting; if anything went wrong during this process, the error message will be sent to \fBsyslog(3)\fR, and the file system will be unmounted without saving some or all data.
 .PP
 When modifying a Minecraft Region file, it is currently not possible to extend a modified chunk beyond the space available for the chunk in that Region file; although this rarely happen unless a considerable amount of additional data was copied into a chunk. If this happens, such chunk will not be saved.
 
