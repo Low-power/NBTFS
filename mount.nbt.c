@@ -55,8 +55,8 @@ static struct wrapped_nbt_node root_node = { .self = &root_node };
 
 static int need_full_write;
 static int region_fd = -1;
-static size_t region_file_size = 0;
-static void *region_map = NULL;
+static size_t region_file_size;
+static void *region_map;
 static struct chunk_info {
 	uint32_t raw_offset_and_size;
 	uint32_t raw_mtime;
@@ -1566,7 +1566,7 @@ static int read_region_header(int fd) {
 	region_file_size = len;
 	lseek(fd, 0, SEEK_SET);
 	region_map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-	if(!region_map) {
+	if(region_map == MAP_FAILED) {
 		perror("mmap");
 		return -1;
 	}

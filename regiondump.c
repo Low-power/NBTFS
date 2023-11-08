@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
 	}
 	lseek(fd, 0, SEEK_SET);
 	void *map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-	if(!map) {
+	if(map == MAP_FAILED) {
 		perror("mmap");
 		return 1;
 	}
