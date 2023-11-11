@@ -27,7 +27,7 @@
 #define IS_LIST_EMPTY(LIST) (&(LIST)->entry == (LIST)->entry.flink)
 // NBT_IS_DIRECTORY is not used for region root node
 #define NBT_IS_DIRECTORY(NODE) ((NODE)->type == NORMAL_NODE && ((NODE)->node->type == TAG_COMPOUND || (NODE)->node->type == TAG_LIST || (NODE)->node->type == TAG_INT_ARRAY || (NODE)->node->type == TAG_LONG_ARRAY))
-#define SET_MODIFIED(NODE) do { if((NODE)->chunk) (NODE)->chunk->is_modified = 1; else is_modified = 1; } while(0)
+#define SET_MODIFIED(NODE) do { if((NODE)->chunk) { (NODE)->chunk->mtime = time(NULL); (NODE)->chunk->is_modified = 1; } else is_modified = 1; } while(0)
 
 struct wrapped_nbt_node {
 	struct wrapped_nbt_node *self;
@@ -40,6 +40,7 @@ struct wrapped_nbt_node {
 		int index;
 	} pos;
 	struct chunk_info *chunk;
+	int is_chunk_root;
 };
 
 static uid_t myuid;
@@ -62,6 +63,7 @@ static struct chunk_info {
 	uint32_t raw_mtime;
 	off_t file_offset;
 	size_t file_size;
+	time_t mtime;
 	void *map_begin;
 	size_t length;
 	struct nbt_node *nbt_node;
@@ -158,6 +160,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 		r->node = info->nbt_node;
 		r->pos.head = NULL;
 		r->chunk = info;
+		r->is_chunk_root = 1;
 		return r;
 	}
 
@@ -192,6 +195,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 				r->node = type_name_node;
 				r->pos.head = NULL;
 				r->chunk = parent->chunk;
+				r->is_chunk_root = 0;
 				return r;
 			}
 			i = strtol(name, &end_p, 0);
@@ -206,6 +210,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 					r->node = list_entry(pos, struct nbt_list, entry)->data;
 					r->pos.head = pos;
 					r->chunk = parent->chunk;
+					r->is_chunk_root = 0;
 					return r;
 				}
 			}
@@ -222,6 +227,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 					r->node = entry;
 					r->pos.head = pos;
 					r->chunk = parent->chunk;
+					r->is_chunk_root = 0;
 					return r;
 				}
 			}
@@ -242,6 +248,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 			r->node = parent->node;
 			r->pos.index = i;
 			r->chunk = parent->chunk;
+			r->is_chunk_root = 0;
 			return r;
 	}
 	return NULL;
@@ -444,6 +451,7 @@ static struct wrapped_nbt_node *create_node(struct wrapped_nbt_node *parent, con
 		r->node = parent->node;							\
 		r->pos.index = i;							\
 		r->chunk = parent->chunk;						\
+		r->is_chunk_root = 0;							\
 		return r;								\
 	} while(0)
 
@@ -489,6 +497,7 @@ static struct wrapped_nbt_node *create_node(struct wrapped_nbt_node *parent, con
 	r->type = NORMAL_NODE;
 	r->node = node;
 	r->chunk = parent->chunk;
+	r->is_chunk_root = 0;
 	if(parent != orig_parent_node) free(parent);
 	struct nbt_list *new_list = malloc(sizeof(struct nbt_list));
 	if(!new_list) {
@@ -596,6 +605,7 @@ static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_i
 		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
 		stbuf->st_mode &= ~node_umask;
 		stbuf->st_size = get_size(node);
+		if(is_region && node->is_chunk_root) stbuf->st_mtime = node->chunk->mtime;
 	}
 	return 0;
 }
@@ -1467,7 +1477,7 @@ static void nbt_destroy(void *a) {
 						handle_file_error("lseek", &region_fd);
 					}
 					if(region_fd != -1) {
-						time_t t = time(NULL);
+						time_t t = info->mtime;
 						if(sync_write(region_fd, buffer.data, buffer.len) < 0) {
 							handle_file_error("write", &region_fd);
 						} else if(t != (time_t)-1 && (uint64_t)t <= UINT32_MAX) {
@@ -1588,14 +1598,7 @@ static int read_region_header(int fd) {
 			return -1;
 		}
 		info->raw_mtime = int_p[1024 + i];
-/*
-		time_t chunk_mtime = ntohl(info->raw_mtime);
-		struct tm *chunk_tm = localtime(&chunk_mtime);
-		char time_buffer[24];
-		if(!strftime(time_buffer, sizeof time_buffer, "%F %T", chunk_tm)) {
-			sprintf(time_buffer, "%d", (int)chunk_mtime);
-		}
-*/
+		info->mtime = ntohl(info->raw_mtime);
 		uint8_t *chunk = (uint8_t *)region_map + file_offset;
 		int32_t used_space;
 		memcpy(&used_space, chunk, 4);
@@ -1796,6 +1799,7 @@ not_an_option:
 		root_node.node = NULL;
 		root_node.pos.head = NULL;
 		root_node.chunk = NULL;
+		root_node.is_chunk_root = 0;
 		if(fd != region_fd) close(fd);
 		syslog(LOG_DEBUG, "Region %s loaded successfully", mount_from);
 	} else {
@@ -1824,6 +1828,7 @@ not_an_option:
 		}
 		root_node.pos.head = NULL;
 		root_node.chunk = NULL;
+		root_node.is_chunk_root = 0;
 		if(f != nbt_file) fclose(f);
 		if(compression == -1) compression = STRAT_GZIP;
 		syslog(LOG_DEBUG, "NBT %s loaded successfully", mount_from);
