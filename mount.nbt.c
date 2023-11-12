@@ -599,7 +599,8 @@ static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_i
 		stbuf->st_ino = 1;
 		stbuf->st_mode = (0777 | S_IFDIR) & ~node_umask;
 	} else {
-		stbuf->st_ino = (ino_t)node;
+		assert(node->node);
+		stbuf->st_ino = (ino_t)node->node;
 		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
 		stbuf->st_mode &= ~node_umask;
 		stbuf->st_size = get_size(node);
