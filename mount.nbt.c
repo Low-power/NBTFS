@@ -74,36 +74,36 @@ static int is_modified = 0;
 static nbt_type get_nbt_type_by_name_prefix(const char *name, size_t len) {
 	switch(len) {
 		case 4:
-			if(strncmp(name, "byte", 4) == 0) return TAG_BYTE;
-			else if(strncmp(name, "int8", 4) == 0) return TAG_BYTE;
-			else if(strncmp(name, "list", 4) == 0) return TAG_LIST;
-			else break;
+			if(memcmp(name, "byte", 4) == 0) return TAG_BYTE;
+			if(memcmp(name, "int8", 4) == 0) return TAG_BYTE;
+			if(memcmp(name, "list", 4) == 0) return TAG_LIST;
+			break;
 		case 5:
-			if(strncmp(name, "int16", 5) == 0) return TAG_SHORT;
-			else if(strncmp(name, "int32", 5) == 0) return TAG_INT;
-			else if(strncmp(name, "int64", 5) == 0) return TAG_LONG;
-			else if(strncmp(name, "float", 5) == 0) return TAG_FLOAT;
-			else break;
+			if(memcmp(name, "int16", 5) == 0) return TAG_SHORT;
+			if(memcmp(name, "int32", 5) == 0) return TAG_INT;
+			if(memcmp(name, "int64", 5) == 0) return TAG_LONG;
+			if(memcmp(name, "float", 5) == 0) return TAG_FLOAT;
+			break;
 		case 6:
-			if(strncmp(name, "string", 6) == 0) return TAG_STRING;
-			else if(strncmp(name, "single", 6) == 0) return TAG_FLOAT;
-			else if(strncmp(name, "double", 6) == 0) return TAG_DOUBLE;
-			else break;
+			if(memcmp(name, "string", 6) == 0) return TAG_STRING;
+			if(memcmp(name, "single", 6) == 0) return TAG_FLOAT;
+			if(memcmp(name, "double", 6) == 0) return TAG_DOUBLE;
+			break;
 		case 7:
-			if(strncmp(name, "float32", 7) == 0) return TAG_FLOAT;
-			else if(strncmp(name, "float64", 7) == 0) return TAG_DOUBLE;
-			else break;
+			if(memcmp(name, "float32", 7) == 0) return TAG_FLOAT;
+			if(memcmp(name, "float64", 7) == 0) return TAG_DOUBLE;
+			break;
 		case 8:
-			if(strncmp(name, "compound", 8) == 0) return TAG_COMPOUND;
-			else break;
+			if(memcmp(name, "compound", 8) == 0) return TAG_COMPOUND;
+			break;
 		case 9:
-			if(strncmp(name, "bytearray", 9) == 0) return TAG_BYTE_ARRAY;
-			else if(strncmp(name, "int8array", 9) == 0) return TAG_BYTE_ARRAY;
-			else break;
+			if(memcmp(name, "bytearray", 9) == 0) return TAG_BYTE_ARRAY;
+			if(memcmp(name, "int8array", 9) == 0) return TAG_BYTE_ARRAY;
+			break;
 		case 10:
-			if(strncmp(name, "int32array", 10) == 0) return TAG_INT_ARRAY;
-			else if(strncmp(name, "int64array", 10) == 0) return TAG_LONG_ARRAY;
-			else break;
+			if(memcmp(name, "int32array", 10) == 0) return TAG_INT_ARRAY;
+			if(memcmp(name, "int64array", 10) == 0) return TAG_LONG_ARRAY;
+			break;
 	}
 	return TAG_INVALID;
 }
