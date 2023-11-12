@@ -59,8 +59,6 @@ static int region_fd = -1;
 static size_t region_file_size;
 static void *region_map;
 static struct chunk_info {
-	uint32_t raw_offset_and_size;
-	uint32_t raw_mtime;
 	off_t file_offset;
 	size_t file_size;
 	time_t mtime;
@@ -1584,7 +1582,7 @@ static int read_region_header(int fd) {
 	int32_t *int_p = region_map;
 	for(i = 0; i < 1024; i++) {
 		struct chunk_info *info = region_chunks + i;
-		info->raw_offset_and_size = int_p[i];
+		//uint32_t raw_offset_and_size = int_p[i];
 		size_t chunk_size = byte_p[i * 4 + 3] * 4 * 1024;
 		if(!chunk_size) continue;
 		off_t chunk_offset = (ntohl(int_p[i]) >> 8) & 0xffffff;
@@ -1597,8 +1595,8 @@ static int read_region_header(int fd) {
 			fputs("Cannot continue in read-write mode\n", stderr);
 			return -1;
 		}
-		info->raw_mtime = int_p[1024 + i];
-		info->mtime = ntohl(info->raw_mtime);
+		uint32_t raw_mtime = int_p[1024 + i];
+		info->mtime = ntohl(raw_mtime);
 		uint8_t *chunk = (uint8_t *)region_map + file_offset;
 		int32_t used_space;
 		memcpy(&used_space, chunk, 4);
