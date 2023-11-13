@@ -1050,21 +1050,20 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 			list_for_each(pos, &node->node->payload.tag_compound->entry) {
 				struct nbt_node *entry = list_entry(pos, struct nbt_list, entry)->data;
 				if(!entry->name) continue;
-				if(use_type_prefix) {
+				if(use_type_prefix || strchr(entry->name, ':')) {
 					const char *prefix = get_node_type_name(entry);
-					if(prefix) {
-						size_t prefix_len = strlen(prefix);
-						size_t name_len = strlen(entry->name);
-						char text_buffer[prefix_len + 1 + name_len + 1];
-						memcpy(text_buffer, prefix, prefix_len);
-						text_buffer[prefix_len] = ':';
-						memcpy(text_buffer + prefix_len + 1, entry->name, name_len);
-						text_buffer[prefix_len + 1 + name_len] = 0;
-						filler(buf, text_buffer, NULL, 0);
-						continue;
-					}
+					if(!prefix) continue;
+					size_t prefix_len = strlen(prefix);
+					size_t name_len = strlen(entry->name);
+					char text_buffer[prefix_len + 1 + name_len + 1];
+					memcpy(text_buffer, prefix, prefix_len);
+					text_buffer[prefix_len] = ':';
+					memcpy(text_buffer + prefix_len + 1, entry->name, name_len);
+					text_buffer[prefix_len + 1 + name_len] = 0;
+					filler(buf, text_buffer, NULL, 0);
+				} else {
+					filler(buf, entry->name, NULL, 0);
 				}
-				filler(buf, entry->name, NULL, 0);
 			}
 			break;
 		case TAG_INT_ARRAY:

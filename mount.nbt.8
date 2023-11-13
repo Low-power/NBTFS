@@ -40,7 +40,7 @@ Revert any \fBro\fR option that may be specified early.
 Specify the \fI<nbt-file>\fR is a Minecraft Region file instead of a standalone NBT file.
 .TP
 .B typeprefix
-Use node type prefix for node names when listing compound nodes as a directory. This option affects directory listing only, existing nodes can always be accessed either with or without the type prefix.
+Use node type prefix for node names when listing compound nodes as a directory. This option affects directory listing only, existing nodes where their name contains no colon can always be accessed either with or without the type prefix.
 .TP
 .B umask=\fI<mask>\fR
 Set file mode mask using an octal number for NBT nodes, default 0.
@@ -100,6 +100,8 @@ Data/int64:RandomSeed
 compound:Data/RandomSeed
 .RE
 Turning on mount option \fBtypeprefix\fR will having this \fBtype prefix\fR be automatically prepended to node names, when listing a \fBcompound\fR using \fBreaddir(3)\fR; this could be useful to preserve the type information when copying a \fBcompound\fR node recursively (such as using \fBtar(1)\fR), so it is possible for the copied nodes be restored into another NBT later.
+.PP
+To avoid ambiguity, nodes can be listed and accessed only with the corresponding type prefix when their name containing the colon.
 .SS Referencing Nodes Under List
 Nodes under a \fBlist\fR are accessed using index numbers starting with 0. They will also have same type; a pseudo file \fB.type\fR is available under any \fBlist\fR to indicate node type the list contains.
 .SS Accessing Individual Node
@@ -130,7 +132,7 @@ On supported platforms, the array nodes may also be read directly (using \fBread
 .SS Under Compound
 Nodes under a \fBcompound\fR can be removed by using \fBunlink(2)\fR or \fBrmdir(2)\fR, according to their represented file type; usual file system restrictions on directory apply, meaning nodes that being represented as directories can not be removed unless empty.
 .PP
-Unlike referencing an existing node, creating a new node under a \fBcompound\fR must use a type-prefixed name.
+Unlike referencing an existing node, creating a new node under a \fBcompound\fR requires the use of a type-prefixed name.
 .SS Under List
 Like \fBcompound\fR, nodes under a \fBlist\fR may be removed by using either \fBunlink(2)\fR or \fBrmdir(2)\fR; if a non-tail node was removed, the index number of later nodes will be shifted backward by 1, which could be surprising when trying to remove multiple nodes.
 .PP
