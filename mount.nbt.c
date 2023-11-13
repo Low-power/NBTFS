@@ -744,7 +744,7 @@ static int nbt_open(const char *path, struct fuse_file_info *fi) {
 	if(fi->flags & O_TRUNC) {
 		int ne = nbt_ftruncate(path, 0, fi);
 		if(ne) {
-			free(node);
+			nbt_release(path, fi);
 			return ne;
 		}
 	}
