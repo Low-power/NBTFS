@@ -30,7 +30,7 @@
 #define SET_MODIFIED(NODE) do { if((NODE)->chunk) { (NODE)->chunk->mtime = time(NULL); (NODE)->chunk->is_modified = 1; } else is_modified = 1; } while(0)
 
 struct wrapped_nbt_node {
-	struct wrapped_nbt_node *self;
+	const struct wrapped_nbt_node *self;
 	enum {
 		NORMAL_NODE, REGION_ROOT_NODE, LIST_TYPE_NODE, ARRAY_ELEMENT_NODE
 	} type;
@@ -62,7 +62,7 @@ static struct chunk_info {
 	off_t file_offset;
 	size_t file_size;
 	time_t mtime;
-	void *map_begin;
+	const void *map_begin;
 	size_t length;
 	struct nbt_node *nbt_node;
 	int is_modified;
@@ -139,7 +139,7 @@ static const char *get_node_type_name(const struct nbt_node *node) {
 	}
 }
 
-static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *parent, const char *name) {
+static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_node *parent, const char *name) {
 	if(is_region && parent->type == REGION_ROOT_NODE) {
 		char *end_p;
 		unsigned int i = strtoul(name, &end_p, 0);
@@ -148,7 +148,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(struct wrapped_nbt_node *
 		struct chunk_info *info = region_chunks + i;
 		if(!info->nbt_node) {
 			if(!info->map_begin) return NULL;
-			info->nbt_node = nbt_parse_compressed((char *)info->map_begin + 1, info->length - 1);
+			info->nbt_node = nbt_parse_compressed((const char *)info->map_begin + 1, info->length - 1);
 			if(!info->nbt_node) return NULL;
 		}
 		struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
@@ -533,7 +533,7 @@ static struct wrapped_nbt_node *file_info_to_nbt_node(const struct fuse_file_inf
 	return node;
 }
 
-static size_t get_size(struct wrapped_nbt_node *node) {
+static size_t get_size(const struct wrapped_nbt_node *node) {
 	switch(node->type) {
 			const char *s;
 		case NORMAL_NODE:
@@ -910,7 +910,7 @@ static int nbt_rmdir(const char *path) {
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 	char buffer[4096];
 	size_t length = 0;
-	struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
+	const struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
 	switch(node->type) {
 		case NORMAL_NODE:
 			break;
@@ -1015,7 +1015,7 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 
 static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
 	unsigned int i;
-	struct wrapped_nbt_node *node = (struct wrapped_nbt_node *)fi->fh;
+	const struct wrapped_nbt_node *node = (const struct wrapped_nbt_node *)fi->fh;
 	switch(node->type) {
 		case NORMAL_NODE:
 			break;
@@ -1084,7 +1084,7 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 static int nbt_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 	if(read_only) return -EROFS;
 	if(!size) return 0;
-	struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
+	const struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
 	switch(node->type) {
 		case NORMAL_NODE:
 			break;
@@ -1433,7 +1433,7 @@ static void nbt_destroy(void *a) {
 			}
 		}
 		for(i = 0; i < 1024; i++) {
-			struct chunk_info *info = region_chunks + i;
+			const struct chunk_info *info = region_chunks + i;
 			if(!info->map_begin) continue;
 			if(!read_only && region_fd != -1 && (info->is_modified || need_full_write)) {
 				int chunk_compression;
@@ -1444,7 +1444,7 @@ static void nbt_destroy(void *a) {
 				if(info->is_modified) {
 					syslog(LOG_DEBUG, "Chunk %u has been modified", i);
 					chunk_compression = compression == -1 ?
-						(*(uint8_t *)info->map_begin == 1 ? STRAT_GZIP : STRAT_INFLATE) :
+						(*(const uint8_t *)info->map_begin == 1 ? STRAT_GZIP : STRAT_INFLATE) :
 						compression;
 					buffer = nbt_dump_compressed(info->nbt_node, chunk_compression);
 					if(!buffer.data) {
@@ -1578,8 +1578,8 @@ static int read_region_header(int fd) {
 		perror("mmap");
 		return -1;
 	}
-	uint8_t *byte_p = region_map;
-	int32_t *int_p = region_map;
+	const uint8_t *byte_p = region_map;
+	const int32_t *int_p = region_map;
 	for(i = 0; i < 1024; i++) {
 		struct chunk_info *info = region_chunks + i;
 		//uint32_t raw_offset_and_size = int_p[i];
