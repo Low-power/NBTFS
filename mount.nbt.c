@@ -53,6 +53,7 @@ static int is_region = 0;
 static const char *write_file_path = NULL;
 static int compression = -1;
 static int chunk_symlinks_visible = 0;
+static int array_need_swap_bytes = 0;
 
 static struct wrapped_nbt_node root_node = { .self = &root_node };
 
@@ -1056,7 +1057,17 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			if(length <= (size_t)offset) return 0;
 			length -= offset;
 			if(length > sizeof buffer) length = sizeof buffer;
-			memcpy(buffer, p + offset, length);
+			if(node->node->type != TAG_BYTE_ARRAY && array_need_swap_bytes) {
+				size_t i = 0;
+				size_t w = node->node->type == TAG_INT_ARRAY ? 3 : 7;
+				p += offset;
+				while(i < length) {
+					buffer[i] = p[(i & ~w) | (~i & w)];
+					i++;
+				}
+			} else {
+				memcpy(buffer, p + offset, length);
+			}
 			offset = 0;
 			break;
 		default:
@@ -1617,6 +1628,17 @@ static char *parse_extended_options(char *o) {
 			else {
 				fprintf(stderr,
 					"Invalid argument '%s' for 'chunksymlink', it can only be 'hidden' or 'visible'\n",
+					a);
+				exit(-1);
+			}
+		} else if(strncmp(o, "arraybyteorder=", 15) == 0) {
+			const char *a = o + 15;
+			if(strcmp(a, "host") == 0) array_need_swap_bytes = 0;
+			else if(strcmp(a, "big") == 0) array_need_swap_bytes = htonl(1) != 1;
+			else if(strcmp(a, "little") == 0) array_need_swap_bytes = htonl(1) == 1;
+			else {
+				fprintf(stderr,
+					"Invalid argument '%s' for 'arraybyteorder', it can only be 'host', 'big' or 'little'\n",
 					a);
 				exit(-1);
 			}

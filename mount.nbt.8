@@ -53,6 +53,9 @@ Set compression format for writing NBT data; default \fBgzip\fR for standalone N
 .TP
 .B chunksymlink={hidden|visible}
 Set whether the symbolic links in form of \fI<x>\fR,\fI<z>\fR for chunks, be visible in the region root directory; default \fBhidden\fR. This option is meaningful only when mounting a Minecraft Region file.
+.TP
+.B arraybyteorder={host|big|little}
+Set integer byte order for presenting data of \fBint32array\fR and \fBint64array\fR nodes; default \fBhost\fR. This option is meaningful only when direct \fBread(2)\fRing of directories is supported by the operating system and the FUSE implementation.
 .RE
 
 .B
@@ -129,7 +132,7 @@ Reading from a \fBstring\fR node will have an additional line feed character (\\
 \fBint32array\fR and \fBint64array\fR nodes are represented as directories, the array elements are accessed using an index number starting with 0, as regular files under the directory.
 Creating a new regular file with appreciate index number under the directory extends the array, and any element between the old tail index and new index will appear automatically as well; newly added elements will initialized to 0.
 An array can also be shrunk by removing (\fBunlink(2)\fR) the tail element, one element at a time; as a design limitation, only the tail element can be removed.
-On supported platforms, the array nodes may also be read directly (using \fBread(2)\fR); in this case seeking is supported only when aligned to element size, which is 4 or 8 for \fBint32array\fR or \fBint64array\fR respectively. The data stream read directly from an array will be the binary representation of the array elements in \fBhost byte order\fR.
+On supported platforms, the array nodes may also be read directly (using \fBread(2)\fR); in this case seeking is supported only when aligned to element size, which is 4 or 8 for \fBint32array\fR or \fBint64array\fR respectively. The data stream read directly from an array will be the binary representation of the array elements in a byte order specified by the mount option \fBarraybyteorder\fR, which is \fBhost byte order\fR by default.
 
 .SH ADDING AND REMOVING NODES
 .SS Under Compound
@@ -208,6 +211,9 @@ echo 31.5 > Pos/0
 .fi
 .in -2
 .sp
+
+.SH AUTHOR
+\fBmount.nbt\fR was written by WHR <whr@rivoreo.one>.
 
 .SH "SEE ALSO"
 .PP
