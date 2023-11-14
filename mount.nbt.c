@@ -159,14 +159,16 @@ static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_
 				return NULL;
 			}
 			r->node->type = 128;
-			r->node->payload.tag_string = malloc(5);
-			if(!r->node->payload.tag_string) {
+			r->node->payload.tag_byte_array.data = malloc(5);
+			if(!r->node->payload.tag_byte_array.data) {
 				free(r->node);
 				free(r);
 				errno = ENOMEM;
 				return NULL;
 			}
-			sprintf(r->node->payload.tag_string, "%u", i + j * 32);
+			r->node->payload.tag_byte_array.length =
+				snprintf((char *)r->node->payload.tag_byte_array.data, 5, "%u", i + j * 32);
+			assert(r->node->payload.tag_byte_array.length < 5);
 			r->pos.head = NULL;
 			r->chunk = NULL;
 			r->is_chunk_root = 0;
@@ -283,7 +285,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_
 static void free_wrapped_node(struct wrapped_nbt_node *node) {
 	if(node) switch(node->type) {
 		case SYMBOLIC_LINK_NODE:
-			free(node->node->payload.tag_string);
+			free(node->node->payload.tag_byte_array.data);
 			// Fallthrough
 		case LIST_TYPE_NODE:
 			free(node->node);
@@ -587,7 +589,7 @@ static size_t get_size(const struct wrapped_nbt_node *node) {
 			}
 			__builtin_unreachable();
 		case SYMBOLIC_LINK_NODE:
-			return strlen(node->node->payload.tag_string);
+			return node->node->payload.tag_byte_array.length;
 		default:
 			return 0;
 	}
@@ -667,9 +669,9 @@ static int nbt_readlink(const char *path, char *buffer, size_t size) {
 		free_wrapped_node(node);
 		return -EINVAL;
 	}
-	size_t len = strlen(node->node->payload.tag_string);
+	size_t len = node->node->payload.tag_byte_array.length;
 	if(len > size - 1) len = size - 1;
-	memcpy(buffer, node->node->payload.tag_string, len);
+	memcpy(buffer, node->node->payload.tag_byte_array.data, len);
 	buffer[len] = 0;
 	free_wrapped_node(node);
 	return 0;
