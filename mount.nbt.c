@@ -27,12 +27,13 @@
 #define IS_LIST_EMPTY(LIST) (&(LIST)->entry == (LIST)->entry.flink)
 // NBT_IS_DIRECTORY is not used for region root node
 #define NBT_IS_DIRECTORY(NODE) ((NODE)->type == NORMAL_NODE && ((NODE)->node->type == TAG_COMPOUND || (NODE)->node->type == TAG_LIST || (NODE)->node->type == TAG_INT_ARRAY || (NODE)->node->type == TAG_LONG_ARRAY))
+#define NBT_NODE_MODE(NODE) (NBT_IS_DIRECTORY(NODE) ? (0777 | S_IFDIR) : (0666 | ((NODE)->type == SYMBOLIC_LINK_NODE ? S_IFLNK : S_IFREG)))
 #define SET_MODIFIED(NODE) do { if((NODE)->chunk) { (NODE)->chunk->mtime = time(NULL); (NODE)->chunk->is_modified = 1; } else is_modified = 1; } while(0)
 
 struct wrapped_nbt_node {
 	const struct wrapped_nbt_node *self;
 	enum {
-		NORMAL_NODE, REGION_ROOT_NODE, LIST_TYPE_NODE, ARRAY_ELEMENT_NODE
+		NORMAL_NODE, REGION_ROOT_NODE, LIST_TYPE_NODE, ARRAY_ELEMENT_NODE, SYMBOLIC_LINK_NODE
 	} type;
 	struct nbt_node *node;
 	union {
@@ -51,6 +52,7 @@ static int use_type_prefix = 0;
 static int is_region = 0;
 static const char *write_file_path = NULL;
 static int compression = -1;
+static int chunk_symlinks_visible = 0;
 
 static struct wrapped_nbt_node root_node = { .self = &root_node };
 
@@ -143,8 +145,34 @@ static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_
 	if(is_region && parent->type == REGION_ROOT_NODE) {
 		char *end_p;
 		unsigned int i = strtoul(name, &end_p, 0);
-		if(*end_p) return NULL;
-		if(i >= 1024) return NULL;
+		if(*end_p == ',' && i < 32) {
+			unsigned int j = strtoul(end_p + 1, &end_p, 0);
+			if(*end_p || j >= 32) return NULL;
+			struct wrapped_nbt_node *r = malloc(sizeof(struct wrapped_nbt_node));
+			if(!r) return NULL;
+			r->self = r;
+			r->type = SYMBOLIC_LINK_NODE;
+			r->node = malloc(sizeof(struct nbt_node));
+			if(!r->node) {
+				free(r);
+				errno = ENOMEM;
+				return NULL;
+			}
+			r->node->type = 128;
+			r->node->payload.tag_string = malloc(5);
+			if(!r->node->payload.tag_string) {
+				free(r->node);
+				free(r);
+				errno = ENOMEM;
+				return NULL;
+			}
+			sprintf(r->node->payload.tag_string, "%u", i + j * 32);
+			r->pos.head = NULL;
+			r->chunk = NULL;
+			r->is_chunk_root = 0;
+			return r;
+		}
+		if(*end_p || i >= 1024) return NULL;
 		struct chunk_info *info = region_chunks + i;
 		if(!info->nbt_node) {
 			if(!info->map_begin) return NULL;
@@ -253,7 +281,14 @@ static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_
 }
 
 static void free_wrapped_node(struct wrapped_nbt_node *node) {
-	if(node && node->type == LIST_TYPE_NODE) free(node->node);
+	if(node) switch(node->type) {
+		case SYMBOLIC_LINK_NODE:
+			free(node->node->payload.tag_string);
+			// Fallthrough
+		case LIST_TYPE_NODE:
+			free(node->node);
+			break;
+	}
 	free(node);
 }
 
@@ -547,8 +582,12 @@ static size_t get_size(const struct wrapped_nbt_node *node) {
 					return snprintf(NULL, 0, "%d\n", (int)node->node->payload.tag_int_array.data[node->pos.index]);
 				case TAG_LONG_ARRAY:
 					return snprintf(NULL, 0, "%lld\n", (long long int)node->node->payload.tag_long_array.data[node->pos.index]);
+				default:
+					return 0;
 			}
-			// Fallthrough
+			__builtin_unreachable();
+		case SYMBOLIC_LINK_NODE:
+			return strlen(node->node->payload.tag_string);
 		default:
 			return 0;
 	}
@@ -601,7 +640,7 @@ static int nbt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_i
 	} else {
 		assert(node->node);
 		stbuf->st_ino = (ino_t)node->node;
-		stbuf->st_mode = NBT_IS_DIRECTORY(node) ? (0777 | S_IFDIR) : (0666 | S_IFREG);
+		stbuf->st_mode = NBT_NODE_MODE(node);
 		stbuf->st_mode &= ~node_umask;
 		stbuf->st_size = get_size(node);
 		if(is_region && node->is_chunk_root) stbuf->st_mtime = node->chunk->mtime;
@@ -617,6 +656,23 @@ static int nbt_getattr(const char *path, struct stat *stbuf) {
 	int ne = nbt_fgetattr(path, stbuf, &fi);
 	nbt_release(path, &fi);
 	return ne;
+}
+
+static int nbt_readlink(const char *path, char *buffer, size_t size) {
+	if(!size) return -EINVAL;
+	errno = ENOENT;
+	struct wrapped_nbt_node *node = get_node(&root_node, path);
+	if(!node) return -errno;
+	if(node->type != SYMBOLIC_LINK_NODE) {
+		free_wrapped_node(node);
+		return -EINVAL;
+	}
+	size_t len = strlen(node->node->payload.tag_string);
+	if(len > size - 1) len = size - 1;
+	memcpy(buffer, node->node->payload.tag_string, len);
+	buffer[len] = 0;
+	free_wrapped_node(node);
+	return 0;
 }
 
 static int nbt_ftruncate(const char *path, off_t length, struct fuse_file_info *fi) {
@@ -965,7 +1021,6 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			p = node->node->payload.tag_string;
 			if(!p) return 0;
 			goto copy_string;
-		//case 128:
 		copy_list_type:
 			p = get_node_type_name(node->node->payload.tag_list->data);
 			if(!p) p = "invalid";
@@ -1027,10 +1082,26 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 			for(i = 0; i < 1024; i++) {
 				const struct chunk_info *info = region_chunks + i;
 				if(!info->map_begin) continue;
-				char text_buffer[5];
+				char text_buffer[6];
 				sprintf(text_buffer, "%u", i);
 				filler(buf, text_buffer, NULL, 0);
+				if(chunk_symlinks_visible) {
+					sprintf(text_buffer, "%u,%u", i % 32, i / 32);
+					filler(buf, text_buffer, NULL, 0);
+				}
 			}
+#if 0
+			if(chunk_symlinks_visible) {
+				int x, z;
+				char text_buffer[6];
+				for(x = 0; x < 32; x++) {
+					for(z = 0; z < 32; z++) {
+						sprintf(text_buffer, "%d,%d", x, z);
+						filler(buf, text_buffer, NULL, 0);
+					}
+				}
+			}
+#endif
 			return 0;
 		default:
 			return -ENOTDIR;
@@ -1537,6 +1608,16 @@ static char *parse_extended_options(char *o) {
 				fprintf(stderr, "Compression type %s is not supported\n", a);
 				exit(-1);
 			}
+		} else if(strncmp(o, "chunksymlink=", 13) == 0) {
+			const char *a = o + 13;
+			if(strcmp(a, "hidden") == 0) chunk_symlinks_visible = 0;
+			else if(strcmp(a, "visible") == 0) chunk_symlinks_visible = 1;
+			else {
+				fprintf(stderr,
+					"Invalid argument '%s' for 'chunksymlink', it can only be 'hidden' or 'visible'\n",
+					a);
+				exit(-1);
+			}
 		} else {
 			if(fuse_opt_len) {
 				fuse_opt[fuse_opt_len++] = ',';
@@ -1626,6 +1707,7 @@ static int read_region_header(int fd) {
 static struct fuse_operations operations = {
 	.fgetattr	= nbt_fgetattr,
 	.getattr	= nbt_getattr,
+	.readlink	= nbt_readlink,
 	.create		= nbt_create,
 	.open		= nbt_open,
 	.opendir	= nbt_open,
