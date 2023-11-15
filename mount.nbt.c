@@ -967,7 +967,7 @@ static int nbt_rmdir(const char *path) {
 }
 
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-	char buffer[4096];
+	char buffer[16384];
 	size_t length = 0;
 	const struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
 	switch(node->type) {
