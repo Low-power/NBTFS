@@ -1,4 +1,4 @@
-.TH MOUNT.NBT 8 2023 nbtfsutils
+.TH MOUNT.NBT 8 2024 nbtfsutils
 
 .SH NAME
 mount.nbt - Mount a Named Binary Tag File System
@@ -127,10 +127,10 @@ and
 Nodes with type \fBint8array\fR or \fBstring\fR support \fBlseek(2)\fR and unlimited \fBtruncate(2)\fR operations.
 Reading from a \fBstring\fR node will have an additional line feed character (\\n) appended to the end automatically; similarly, writing to a \fBstring\fR node will have the ending line feed character stripped if exist.
 .PP
-\fBlist\fR and \fBcompound\fR nodes can contain other nodes, accessing them according to above rules.
+\fBlist\fR and \fBcompound\fR nodes can contain other nodes, they can be accessed according to above rules.
 .PP
 \fBint32array\fR and \fBint64array\fR nodes are represented as directories, the array elements are accessed using an index number starting with 0, as regular files under the directory.
-Creating a new regular file with appreciate index number under the directory extends the array, and any element between the old tail index and new index will appear automatically as well; newly added elements will initialized to 0.
+Creating a new regular file with appreciate index number under the directory extends the array, and any element between the old tail index and new index will appear automatically as well; automatically added elements are initialized to 0.
 An array can also be shrunk by removing (\fBunlink(2)\fR) the tail element, one element at a time; as a design limitation, only the tail element can be removed.
 On supported platforms, the array nodes may also be read directly (using \fBread(2)\fR); in this case seeking is supported only when aligned to element size, which is 4 or 8 for \fBint32array\fR or \fBint64array\fR respectively. The data stream read directly from an array will be the binary representation of the array elements in a byte order specified by the mount option \fBarraybyteorder\fR, which is \fBhost byte order\fR by default.
 
@@ -142,7 +142,7 @@ Unlike referencing an existing node, creating a new node under a \fBcompound\fR 
 .SS Under List
 Like \fBcompound\fR, nodes under a \fBlist\fR may be removed by using either \fBunlink(2)\fR or \fBrmdir(2)\fR; if a non-tail node was removed, the index number of later nodes will be shifted backward by 1, which could be surprising when trying to remove multiple nodes.
 .PP
-New node may be added only to the tail of a \fBlist\fR, there is currently not possible to insert a node in middle of a list. Newly created node will have the type specified by the list type, indicated by the \fB.type\fR pseudo file.
+New node may be added only to the tail of a \fBlist\fR; there is currently not possible to insert a node in middle of a list. Newly created node will have the type specified by the list type, indicated by the \fB.type\fR pseudo file.
 .PP
 The list type may also be changed by writing a \fBtype prefix name\fR into \fB.type\fR, but only when the list is empty.
 .SS Special Requirement For Creating List Node
@@ -215,8 +215,8 @@ echo 31.5 > Pos/0
 .SH AUTHOR
 \fBmount.nbt\fR was written by WHR <whr@rivoreo.one>.
 
-.SH "SEE ALSO"
+.SH SEE ALSO
 .PP
-fuse(8), fusermount(8), mount(8)
+fusefs(5), fuse(8), fusermount(8), mount(8), mkfs.nbt(8)
 .PP
 Named Binary Tag specification by Mojang
