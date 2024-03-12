@@ -20,7 +20,7 @@ Example:
 	$ CC=gcc CFLAGS=-Os make
 
 To install built programs and manual pages, type 'make install'; some
-attitional environment variables may be used here:
+additional environment variables may be used here:
 	PREFIX		installing prefix, default /usr/local
 	BINDIR		default ${PREFIX}/bin
 	SBINDIR		default ${PREFIX}/sbin
