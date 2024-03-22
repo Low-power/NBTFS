@@ -1,4 +1,4 @@
-/*	Copyright 2015-2023 Rivoreo
+/*	Copyright 2015-2024 Rivoreo
 
 	This Source Code Form is subject to the terms of the Mozilla Public
 	License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1665,6 +1665,15 @@ static void print_usage(const char *name) {
 		name);
 }
 
+static void print_version() {
+	puts("mount.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
+	puts("Copyright 2015-2024 Rivoreo");
+	puts("This Executable Form of the program can be redistributed under the terms of\n"
+		"the Mozilla Public License, version 2.0.");
+	puts("The program is provided without any warranty. See Mozilla Public License,\n"
+		"version 2.0 for details.");
+}
+
 static int read_region_header(int fd) {
 	unsigned int i;
 	off_t len = lseek(fd, 0, SEEK_END);
@@ -1769,16 +1778,29 @@ int main(int argc, char **argv) {
 				case 0:
 					goto not_an_option;
 				case '-':
-					if(*++o) {
-						fprintf(stderr, "%s: Invalid option '%s'\n",
-							argv[0], argv[i]);
-						return -1;
+					if(!*++o) {
+						end_of_options = 1;
+						break;
 					}
-					end_of_options = 1;
-					break;
+					if(strcmp(o, "verbose") == 0) {
+						o += 7;
+						verbose++;
+						break;
+					}
+					if(strcmp(o, "help") == 0) {
+						print_usage(argv[0]);
+						return 0;
+					}
+					if(strcmp(o, "version") == 0) {
+						print_version();
+						return 0;
+					}
+					fprintf(stderr, "%s: Invalid option '%s'\n",
+						argv[0], argv[i]);
+					return -1;
 			}
 			while(*o) switch(*o++) {
-				char *fuse_extended_options;
+					char *fuse_extended_options;
 				case 'f':
 					fuse_argc++;
 					fuse_argv = realloc(fuse_argv, (fuse_argc + 1) * sizeof(char *));
@@ -1835,12 +1857,7 @@ int main(int argc, char **argv) {
 					print_usage(argv[0]);
 					return 0;
 				case 'V':
-					puts("mount.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
-					puts("Copyright 2015-2023 Rivoreo");
-					puts("This Executable Form of the program can be redistributed under the terms of\n"
-						"the Mozilla Public License, version 2.0.");
-					puts("The program is provided without any warranty. See Mozilla Public License,\n"
-						"version 2.0 for details.");
+					print_version();
 					return 0;
 				default:
 					fprintf(stderr, "%s: Invalid option '-%c'\n", argv[0], o[-1]);
