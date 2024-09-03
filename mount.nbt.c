@@ -588,7 +588,9 @@ static size_t get_size(const struct wrapped_nbt_node *node) {
 				default:
 					return 0;
 			}
+#if (__GCC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4
 			__builtin_unreachable();
+#endif
 		case SYMBOLIC_LINK_NODE:
 			return node->node->payload.tag_byte_array.length;
 		default:
