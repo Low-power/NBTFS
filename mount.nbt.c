@@ -1,4 +1,4 @@
-/*	Copyright 2015-2024 Rivoreo
+/*	Copyright 2015-2025 Rivoreo
 
 	This Source Code Form is subject to the terms of the Mozilla Public
 	License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -969,7 +969,7 @@ static int nbt_rmdir(const char *path) {
 }
 
 static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-	char buffer[16384];
+	char buffer[32];
 	size_t length = 0;
 	const struct wrapped_nbt_node *node = file_info_to_nbt_node(fi);
 	switch(node->type) {
@@ -1033,11 +1033,10 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			length = strlen(p);
 			if(length < (size_t)offset) return 0;
 			length -= offset;
-			if(length > sizeof buffer) length = sizeof buffer;
-			memcpy(buffer, p + offset, length);
-			if(length < sizeof buffer) buffer[length++] = '\n';
-			offset = 0;
-			break;
+			if(length > size) length = size;
+			memcpy(out_buf, p + offset, length);
+			if(length < size) out_buf[length++] = '\n';
+			return length;
 		case TAG_LIST:
 		case TAG_COMPOUND:
 			return -EISDIR;
@@ -1058,20 +1057,19 @@ static int nbt_read(const char *path, char *out_buf, size_t size, off_t offset, 
 			if(offset >= INT32_MAX) return 0;
 			if(length <= (size_t)offset) return 0;
 			length -= offset;
-			if(length > sizeof buffer) length = sizeof buffer;
+			if(length > size) length = size;
 			if(node->node->type != TAG_BYTE_ARRAY && array_need_swap_bytes) {
 				size_t i = 0;
 				size_t w = node->node->type == TAG_INT_ARRAY ? 3 : 7;
 				p += offset;
 				while(i < length) {
-					buffer[i] = p[(i & ~w) | (~i & w)];
+					out_buf[i] = p[(i & ~w) | (~i & w)];
 					i++;
 				}
 			} else {
-				memcpy(buffer, p + offset, length);
+				memcpy(out_buf, p + offset, length);
 			}
-			offset = 0;
-			break;
+			return length;
 		default:
 			return -EIO;
 	}
