@@ -1,5 +1,5 @@
 # Revised Makefile for nbtfsutils
-# Copyright 2015-2023 Rivoreo
+# Copyright 2015-2025 Rivoreo
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -33,8 +33,12 @@
 
 AR ?= ar
 INSTALL ?= install
+
 CFLAGS += -Wall -Wextra -Wno-unused-parameter -Wno-switch -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -std=gnu99
 CFLAGS += -D _FILE_OFFSET_BITS=64
+
+# For BSD make
+CFLAGS += $(CPPFLAGS)
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
