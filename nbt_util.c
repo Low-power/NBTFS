@@ -13,24 +13,25 @@
 
 const char* nbt_type_to_string(nbt_type t)
 {
-#define DEF_CASE(name) case name: return #name;
-    switch(t)
-    {
-        case 0: return "TAG_END";
-        DEF_CASE(TAG_BYTE);
-        DEF_CASE(TAG_SHORT);
-        DEF_CASE(TAG_INT);
-        DEF_CASE(TAG_LONG);
-        DEF_CASE(TAG_FLOAT);
-        DEF_CASE(TAG_DOUBLE);
-        DEF_CASE(TAG_BYTE_ARRAY);
-        DEF_CASE(TAG_STRING);
-        DEF_CASE(TAG_LIST);
-        DEF_CASE(TAG_COMPOUND);
-        DEF_CASE(TAG_INT_ARRAY);
-    default:
-        return "TAG_UNKNOWN";
-    }
+#define DEF_CASE(TYPE) case TYPE: return #TYPE;
+	switch(t) {
+		case 0:
+			return "TAG_END";
+		DEF_CASE(TAG_BYTE)
+		DEF_CASE(TAG_SHORT)
+		DEF_CASE(TAG_INT)
+		DEF_CASE(TAG_LONG)
+		DEF_CASE(TAG_FLOAT)
+		DEF_CASE(TAG_DOUBLE)
+		DEF_CASE(TAG_BYTE_ARRAY)
+		DEF_CASE(TAG_STRING)
+		DEF_CASE(TAG_LIST)
+		DEF_CASE(TAG_COMPOUND)
+		DEF_CASE(TAG_INT_ARRAY)
+		DEF_CASE(TAG_LONG_ARRAY)
+		default:
+			return "TAG_UNKNOWN";
+	}
 #undef DEF_CASE
 }
 
