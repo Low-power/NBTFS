@@ -282,53 +282,51 @@ nbt_node* nbt_filter(const nbt_node* tree, nbt_predicate_t filter, void* aux)
 
     if(tree->name && ret->name == NULL) goto filter_error;
 
-    if(tree->type == TAG_STRING)
-    {
-        ret->payload.tag_string = _nbt_strdup(tree->payload.tag_string);
-        if(ret->payload.tag_string == NULL) goto filter_error;
-    }
-
-    else if(tree->type == TAG_BYTE_ARRAY)
-    {
-        CHECKED_MALLOC(ret->payload.tag_byte_array.data,
-                       tree->payload.tag_byte_array.length,
-                       goto filter_error);
-
-        memcpy(ret->payload.tag_byte_array.data,
-               tree->payload.tag_byte_array.data,
-               tree->payload.tag_byte_array.length);
-
-        ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
-    }
-
-    else if(tree->type == TAG_INT_ARRAY)
-    {
-        CHECKED_MALLOC(ret->payload.tag_int_array.data,
-                       tree->payload.tag_int_array.length * sizeof(int32_t),
-                       goto filter_error);
-
-        memcpy(ret->payload.tag_int_array.data,
-               tree->payload.tag_int_array.data,
-               tree->payload.tag_int_array.length);
-
-        ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
-    }
-
-    /* Okay, we want to keep this node, but keep traversing the tree! */
-    else if(tree->type == TAG_LIST)
-    {
-        ret->payload.tag_list = filter_list(tree->payload.tag_list, filter, aux);
-        if(ret->payload.tag_list == NULL) goto filter_error;
-    }
-    else if(tree->type == TAG_COMPOUND)
-    {
-        ret->payload.tag_compound = filter_list(tree->payload.tag_compound, filter, aux);
-        if(ret->payload.tag_compound == NULL) goto filter_error;
-    }
-    else
-    {
-        ret->payload = tree->payload;
-    }
+	switch(tree->type) {
+		case TAG_STRING:
+			ret->payload.tag_string = _nbt_strdup(tree->payload.tag_string);
+			if(ret->payload.tag_string == NULL) goto filter_error;
+			break;
+		case TAG_BYTE_ARRAY:
+			CHECKED_MALLOC(ret->payload.tag_byte_array.data,
+				tree->payload.tag_byte_array.length,
+				goto filter_error);
+			memcpy(ret->payload.tag_byte_array.data,
+				tree->payload.tag_byte_array.data,
+				tree->payload.tag_byte_array.length);
+			ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
+			break;
+		case TAG_INT_ARRAY:
+			CHECKED_MALLOC(ret->payload.tag_int_array.data,
+				tree->payload.tag_int_array.length * sizeof(int32_t),
+				goto filter_error);
+			memcpy(ret->payload.tag_int_array.data,
+				tree->payload.tag_int_array.data,
+				tree->payload.tag_int_array.length * sizeof(int32_t));
+				ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
+			break;
+		case TAG_LONG_ARRAY:
+			CHECKED_MALLOC(ret->payload.tag_long_array.data,
+				tree->payload.tag_long_array.length * sizeof(int64_t),
+				goto filter_error);
+			memcpy(ret->payload.tag_long_array.data,
+				tree->payload.tag_long_array.data,
+				tree->payload.tag_long_array.length * sizeof(int64_t));
+				ret->payload.tag_long_array.length = tree->payload.tag_long_array.length;
+			break;
+		case TAG_LIST:
+			/* Okay, we want to keep this node, but keep traversing the tree! */
+			ret->payload.tag_list = filter_list(tree->payload.tag_list, filter, aux);
+			if(ret->payload.tag_list == NULL) goto filter_error;
+			break;
+		case TAG_COMPOUND:
+			ret->payload.tag_compound = filter_list(tree->payload.tag_compound, filter, aux);
+			if(ret->payload.tag_compound == NULL) goto filter_error;
+			break;
+		default:
+			ret->payload = tree->payload;
+			break;
+	}
 
     return ret;
 
