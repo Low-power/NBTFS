@@ -143,52 +143,51 @@ nbt_node* nbt_clone(nbt_node* tree)
 
     if(tree->name && ret->name == NULL) goto clone_error;
 
-    if(tree->type == TAG_STRING)
-    {
-        ret->payload.tag_string = _nbt_strdup(tree->payload.tag_string);
-        if(ret->payload.tag_string == NULL) goto clone_error;
-    }
-
-    else if(tree->type == TAG_BYTE_ARRAY)
-    {
-        unsigned char* newbuf;
-        CHECKED_MALLOC(newbuf, tree->payload.tag_byte_array.length, goto clone_error);
-
-        memcpy(newbuf,
-               tree->payload.tag_byte_array.data,
-               tree->payload.tag_byte_array.length);
-
-        ret->payload.tag_byte_array.data   = newbuf;
-        ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
-    }
-
-    else if(tree->type == TAG_INT_ARRAY)
-    {
-        int32_t* newbuf;
-        CHECKED_MALLOC(newbuf, tree->payload.tag_int_array.length * sizeof(int32_t), goto clone_error);
-
-        memcpy(newbuf,
-               tree->payload.tag_int_array.data,
-               tree->payload.tag_int_array.length);
-
-        ret->payload.tag_int_array.data   = newbuf;
-        ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
-    }
-
-    else if(tree->type == TAG_LIST)
-    {
-        ret->payload.tag_list = clone_list(tree->payload.tag_list);
-        if(ret->payload.tag_list == NULL) goto clone_error;
-    }
-    else if(tree->type == TAG_COMPOUND)
-    {
-        ret->payload.tag_compound = clone_list(tree->payload.tag_compound);
-        if(ret->payload.tag_compound == NULL) goto clone_error;
-    }
-    else
-    {
-        ret->payload = tree->payload;
-    }
+	switch(tree->type) {
+			void *newbuf;
+		case TAG_STRING:
+			ret->payload.tag_string = _nbt_strdup(tree->payload.tag_string);
+			if(ret->payload.tag_string == NULL) goto clone_error;
+			break;
+		case TAG_BYTE_ARRAY:
+			CHECKED_MALLOC(newbuf, tree->payload.tag_byte_array.length,
+				goto clone_error);
+			memcpy(newbuf,
+				tree->payload.tag_byte_array.data,
+				tree->payload.tag_byte_array.length);
+			ret->payload.tag_byte_array.data   = newbuf;
+			ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
+			break;
+		case TAG_INT_ARRAY:
+			CHECKED_MALLOC(newbuf, tree->payload.tag_int_array.length * sizeof(int32_t),
+				goto clone_error);
+			memcpy(newbuf,
+				tree->payload.tag_int_array.data,
+				tree->payload.tag_int_array.length * sizeof(int32_t));
+			ret->payload.tag_int_array.data   = newbuf;
+			ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
+			break;
+		case TAG_LONG_ARRAY:
+			CHECKED_MALLOC(newbuf, tree->payload.tag_long_array.length * sizeof(int64_t),
+				goto clone_error);
+			memcpy(newbuf,
+				tree->payload.tag_long_array.data,
+				tree->payload.tag_long_array.length * sizeof(int64_t));
+			ret->payload.tag_long_array.data   = newbuf;
+			ret->payload.tag_long_array.length = tree->payload.tag_long_array.length;
+			break;
+		case TAG_LIST:
+			ret->payload.tag_list = clone_list(tree->payload.tag_list);
+			if(ret->payload.tag_list == NULL) goto clone_error;
+			break;
+		case TAG_COMPOUND:
+			ret->payload.tag_compound = clone_list(tree->payload.tag_compound);
+			if(ret->payload.tag_compound == NULL) goto clone_error;
+			break;
+		default:
+			ret->payload = tree->payload;
+			break;
+	}
 
     return ret;
 
