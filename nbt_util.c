@@ -111,7 +111,12 @@ bool nbt_eq(const nbt_node* restrict a, const nbt_node* restrict b)
         if(a->payload.tag_int_array.length != b->payload.tag_int_array.length) return false;
         return memcmp(a->payload.tag_int_array.data,
                       b->payload.tag_int_array.data,
-                      a->payload.tag_int_array.length) == 0;
+                      a->payload.tag_int_array.length * sizeof(int32_t)) == 0;
+    case TAG_LONG_ARRAY:
+        if(a->payload.tag_long_array.length != b->payload.tag_long_array.length) return false;
+        return memcmp(a->payload.tag_long_array.data,
+                      b->payload.tag_long_array.data,
+                      a->payload.tag_long_array.length * sizeof(int64_t)) == 0;
     case TAG_STRING:
         return strcmp(a->payload.tag_string, b->payload.tag_string) == 0;
     case TAG_LIST:
