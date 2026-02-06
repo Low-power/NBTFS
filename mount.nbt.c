@@ -1,4 +1,4 @@
-/*	Copyright 2015-2025 Rivoreo
+/*	Copyright 2015-2026 Rivoreo
 
 	This Source Code Form is subject to the terms of the Mozilla Public
 	License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -337,16 +337,16 @@ static int init_node(struct nbt_node *node) {
 			break;
 		case TAG_LIST:
 			node->payload.tag_list = malloc(sizeof(struct nbt_list));
-			if(!node->payload.tag_compound) return -1;
-			node->payload.tag_compound->data = malloc(sizeof(struct nbt_node));
-			if(!node->payload.tag_compound->data) {
-				free(node->payload.tag_compound);
+			if(!node->payload.tag_list) return -1;
+			node->payload.tag_list->data = malloc(sizeof(struct nbt_node));
+			if(!node->payload.tag_list->data) {
+				free(node->payload.tag_list);
 				errno = ENOMEM;
 				return -1;
 			}
-			memset(node->payload.tag_compound->data, 0, sizeof(struct nbt_node));
-			//node->payload.tag_compound->data->type = TAG_INVALID;
-			INIT_LIST_HEAD(&node->payload.tag_compound->entry);
+			memset(node->payload.tag_list->data, 0, sizeof(struct nbt_node));
+			//node->payload.tag_list->data->type = TAG_INVALID;
+			INIT_LIST_HEAD(&node->payload.tag_list->entry);
 			break;
 		case TAG_COMPOUND:
 			node->payload.tag_compound = malloc(sizeof(struct nbt_list));
@@ -1125,7 +1125,7 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 		case TAG_LIST:
 			filler(buf, ".type", NULL, 0);
 			i = 0;
-			list_for_each(pos, &node->node->payload.tag_compound->entry) {
+			list_for_each(pos, &node->node->payload.tag_list->entry) {
 				sprintf(text_buffer, "%u", i++);
 				filler(buf, text_buffer, NULL, 0);
 			}
@@ -1405,15 +1405,16 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 						ne = -ENOTEMPTY;
 						goto cleanup;
 					}
+					free(entry->payload.tag_list);
 					break;
 				case TAG_COMPOUND:
 					if(!IS_LIST_EMPTY(entry->payload.tag_compound)) {
 						ne = -ENOTEMPTY;
 						goto cleanup;
 					}
+					free(entry->payload.tag_compound);
 					break;
 			}
-			free(entry->payload.tag_compound);
 			free(entry);
 			list->data = node->node;
 			list_del(node->pos.head);
@@ -1667,7 +1668,7 @@ static void print_usage(const char *name) {
 
 static void print_version() {
 	puts("mount.nbt (nbtfsutils) " NBTFSUTILS_VERSION);
-	puts("Copyright 2015-2024 Rivoreo");
+	puts("Copyright 2015-2026 Rivoreo");
 	puts("This Executable Form of the program can be redistributed under the terms of\n"
 		"the Mozilla Public License, version 2.0.");
 	puts("The program is provided without any warranty. See Mozilla Public License,\n"
