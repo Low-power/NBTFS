@@ -267,6 +267,7 @@ static struct wrapped_nbt_node *get_child_node_by_name(const struct wrapped_nbt_
 		case TAG_LONG_ARRAY:
 			j = parent->node->payload.tag_long_array.length;
 		array:
+			if(type != TAG_INVALID) return NULL;
 			i = strtol(name, &end_p, 0);
 			if(*end_p) return NULL;
 			if(i < 0 || i >= j) return NULL;
