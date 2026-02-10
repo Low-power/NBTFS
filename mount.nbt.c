@@ -1216,39 +1216,59 @@ static int nbt_write(const char *path, const char *buf, size_t size, off_t offse
 		parse_number:
 			if(offset) return -EINVAL;
 			{
+#define RETURN_ON_PARSING_FAILURE() \
+	if(end_p == text_buffer || (*end_p && !isspace(*end_p))) return -EINVAL
+				long int clv;
+				long long int cllv;
+				float cfv;
+				double cdv;
 				char text_buffer[size + 1];
 				memcpy(text_buffer, buf, size);
 				text_buffer[size] = 0;
 				goto *parse_number_labels[node->node->type];
 		parse_byte:
-				node->node->payload.tag_byte = strtol(text_buffer, &end_p, 0);
+				clv = strtol(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_byte = clv;
 				goto parse_number_end;
 		parse_short:
-				node->node->payload.tag_short = strtol(text_buffer, &end_p, 0);
+				clv = strtol(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_short = clv;
 				goto parse_number_end;
 		parse_int:
-				node->node->payload.tag_int = strtol(text_buffer, &end_p, 0);
+				clv = strtol(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_int = clv;
 				goto parse_number_end;
 		parse_long:
-				node->node->payload.tag_long = strtoll(text_buffer, &end_p, 0);
+				cllv = strtoll(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_long = cllv;
 				goto parse_number_end;
 		parse_float:
-				node->node->payload.tag_float = strtof(text_buffer, &end_p);
+				cfv = strtof(text_buffer, &end_p);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_float = cfv;
 				goto parse_number_end;
 		parse_double:
-				node->node->payload.tag_double = strtod(text_buffer, &end_p);
+				cdv = strtod(text_buffer, &end_p);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_double = cdv;
 				goto parse_number_end;
 		parse_int_for_array:
-				node->node->payload.tag_int_array.data[node->pos.index] =
-					strtol(text_buffer, &end_p, 0);
+				clv = strtol(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_int_array.data[node->pos.index] = clv;
 				goto parse_number_end;
 		parse_long_for_array:
-				node->node->payload.tag_long_array.data[node->pos.index] =
-					strtoll(text_buffer, &end_p, 0);
+				cllv = strtoll(text_buffer, &end_p, 0);
+				RETURN_ON_PARSING_FAILURE();
+				node->node->payload.tag_long_array.data[node->pos.index] = cllv;
 		parse_number_end:
-				if(*end_p && !isspace(*end_p)) return -EINVAL;
 				SET_MODIFIED(node);
 				return *end_p ? end_p - text_buffer + 1 : (int)size;
+#undef RETURN_ON_PARSING_FAILURE
 			}
 		case TAG_STRING:
 			orig_len = strlen(node->node->payload.tag_string) + 1;
