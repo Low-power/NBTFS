@@ -1,4 +1,4 @@
-.TH MKFS.NBT 8 2023 nbtfsutils
+.TH MKFS.NBT 8 2026 nbtfsutils
 
 .SH NAME
 mkfs.nbt - Create a Named Binary Tag File System
@@ -8,7 +8,7 @@ mkfs.nbt [-C {gzip|zlib}] [-L \fI<root-node-name>\fR] [-vh] \fI<path>\fR
 .fi
 .SH DESCRIPTION
 .B mkfs.nbt
-creates a standalone NBT file at \fI<path>\fR containing a single \fBcompound\fR as root node. If a regular file at \fI<path>\fR already exist, it will be truncated.
+creates a standalone NBT file at \fI<path>\fR containing a single \fBcompound\fR as root node. If a regular file at \fI<path>\fR already exists, it will be truncated.
 .SH OPTIONS
 .B
 .IP "-C {gzip|zlib}"
@@ -18,13 +18,13 @@ Specify the compression format for the NBT file. Default is \fIgzip\fR.
 Print a brief usage message.
 .B
 .IP "-L \fI<root-node-name>\fR"
-Specify name of the root \fBcompound\fR node. Default an empty string.
+Specify name of the root \fBcompound\fR node. Default is an empty string.
 .B
 .IP -v
-Be Verbose. Print a text dump of the NBT tree to be written into \fI<path>\fR.
+Be verbose. Print a text dump of the NBT tree to be written.
 .B
 .IP -V
 Display version, copyright and licensing information of this tool. The program will exit afterward.
 .SH "SEE ALSO"
 .PP
-mount.nbt(8) nbtdump(1)
+mount.nbt(8), nbtdump(1)
