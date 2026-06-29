@@ -544,12 +544,12 @@ static nbt_status dump_list_contents_ascii(const struct nbt_list* list, struct o
     return NBT_OK;
 }
 
-static const char *quoted_string(const char *s) {
-	static char buffer[8192] = { '"' };
-	if(!s) return "null";
-	unsigned int i = 1;
+static char *quoted_string(const char *s, char *buffer, size_t buffer_size) {
+	if(!s) return strcpy(buffer, "null");
+	size_t i = 1;
+	buffer[0] = '"';
 	while(*s) {
-		if(i >= sizeof buffer - 7) {
+		if(i >= buffer_size - 7) {
 			memcpy(buffer + i, "...", 3);
 			break;
 		}
@@ -578,61 +578,76 @@ static nbt_status __nbt_dump_ascii(const nbt_node* tree, struct output_target *t
 	indent(target, ident);
 
 	switch(tree->type) {
-		nbt_status status;
+			char buffer[8192];
+			nbt_status status;
+
 		case TAG_BYTE:
 			bprintf(target, "TAG_Byte(%s) %i\n",
-				quoted_string(tree->name), (int)tree->payload.tag_byte);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				(int)tree->payload.tag_byte);
 			break;
 		case TAG_SHORT:
 			bprintf(target, "TAG_Short(%s) %i\n",
-				quoted_string(tree->name), (int)tree->payload.tag_short);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				(int)tree->payload.tag_short);
 			break;
 		case TAG_INT:
 			bprintf(target, "TAG_Int(%s) %i\n",
-				quoted_string(tree->name), (int)tree->payload.tag_int);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				(int)tree->payload.tag_int);
 			break;
 		case TAG_LONG:
 			bprintf(target, "TAG_Long(%s) %" PRIi64 "\n",
-				quoted_string(tree->name), tree->payload.tag_long);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				tree->payload.tag_long);
 			break;
 		case TAG_FLOAT:
 			bprintf(target, "TAG_Float(%s) %f\n",
-				quoted_string(tree->name), (double)tree->payload.tag_float);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				(double)tree->payload.tag_float);
 			break;
 		case TAG_DOUBLE:
 			bprintf(target, "TAG_Double(%s) %f\n",
-				quoted_string(tree->name), tree->payload.tag_double);
+				quoted_string(tree->name, buffer, sizeof buffer),
+				tree->payload.tag_double);
 			break;
 		case TAG_BYTE_ARRAY:
-			bprintf(target, "TAG_Byte_Array(%s) ", quoted_string(tree->name));
+			bprintf(target, "TAG_Byte_Array(%s) ",
+				quoted_string(tree->name, buffer, sizeof buffer));
 			dump_byte_array(tree->payload.tag_byte_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_INT_ARRAY:
-			bprintf(target, "Tag_Int_Array(%s) ", quoted_string(tree->name));
+			bprintf(target, "Tag_Int_Array(%s) ",
+				quoted_string(tree->name, buffer, sizeof buffer));
 			dump_int_array(tree->payload.tag_int_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_LONG_ARRAY:
-			bprintf(target, "Tag_Long_Array(%s) ", quoted_string(tree->name));
+			bprintf(target, "Tag_Long_Array(%s) ",
+				quoted_string(tree->name, buffer, sizeof buffer));
 			dump_long_array(tree->payload.tag_long_array, target);
 			bprintf(target, "\n");
 			break;
 		case TAG_STRING:
 			if(tree->payload.tag_string == NULL) return NBT_ERR;
-			bprintf(target, "TAG_String(%s) ", quoted_string(tree->name));
-			bprintf(target, "%s\n", quoted_string(tree->payload.tag_string));
+			bprintf(target, "TAG_String(%s) ",
+				quoted_string(tree->name, buffer, sizeof buffer));
+			bprintf(target, "%s\n",
+				quoted_string(tree->payload.tag_string, buffer, sizeof buffer));
 			break;
 		case TAG_LIST:
 			bprintf(target, "TAG_List(%s) [%s] {\n",
-				quoted_string(tree->name), nbt_type_to_string(tree->payload.tag_list->data->type));
+				quoted_string(tree->name, buffer, sizeof buffer),
+				nbt_type_to_string(tree->payload.tag_list->data->type));
 			status = dump_list_contents_ascii(tree->payload.tag_list, target, ident + 1);
 			indent(target, ident);
 			bprintf(target, "}\n");
 			if(status != NBT_OK) return status;
 			break;
 		case TAG_COMPOUND:
-			bprintf(target, "TAG_Compound(%s) {\n", quoted_string(tree->name));
+			bprintf(target, "TAG_Compound(%s) {\n",
+				quoted_string(tree->name, buffer, sizeof buffer));
 			status = dump_list_contents_ascii(tree->payload.tag_compound, target, ident + 1);
 			indent(target, ident);
 			bprintf(target, "}\n");
