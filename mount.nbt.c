@@ -1104,18 +1104,6 @@ static int nbt_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
 					filler(buf, text_buffer, NULL, 0);
 				}
 			}
-#if 0
-			if(chunk_symlinks_visible) {
-				int x, z;
-				char text_buffer[6];
-				for(x = 0; x < 32; x++) {
-					for(z = 0; z < 32; z++) {
-						sprintf(text_buffer, "%d,%d", x, z);
-						filler(buf, text_buffer, NULL, 0);
-					}
-				}
-			}
-#endif
 			return 0;
 		default:
 			return -ENOTDIR;
@@ -1344,7 +1332,6 @@ static int nbt_rename(const char *old_path, const char *new_path) {
 	}
 	if(!*old_name) {
 		// Attempt to rename root node
-		//if(old_parent_node != &root_node) free(old_parent_node);
 		assert(old_parent_node == &root_node);
 		return -EINVAL;
 	}
@@ -1718,7 +1705,6 @@ static int read_region_header(int fd) {
 	const int32_t *int_p = region_map;
 	for(i = 0; i < 1024; i++) {
 		struct chunk_info *info = region_chunks + i;
-		//uint32_t raw_offset_and_size = int_p[i];
 		size_t chunk_size = byte_p[i * 4 + 3] * 4 * 1024;
 		if(!chunk_size) continue;
 		off_t chunk_offset = (ntohl(int_p[i]) >> 8) & 0xffffff;
